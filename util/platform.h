@@ -27,6 +27,7 @@
 #include <netdb.h>
 #include <endian.h>
 #include <sys/uio.h>
+#include <sys/syscall.h>
 
 #ifndef SOCKET
 #define SOCKET int
