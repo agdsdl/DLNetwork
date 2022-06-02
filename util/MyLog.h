@@ -71,7 +71,7 @@ private:
 //#define mWarning() __mylogger(__FILE__, __LINE__, 'W')
 //#define mCritical() __mylogger(__FILE__, __LINE__, 'E')
 
-#define mDebug() MyOut(__FILENAME__, __LINE__, 'D')
-#define mInfo() MyOut(__FILENAME__, __LINE__, 'I')
-#define mWarning() MyOut(__FILENAME__, __LINE__, 'W')
-#define mCritical() MyOut(__FILENAME__, __LINE__, 'E')
+#define mDebug() DLNetwork::MyOut(__FILENAME__, __LINE__, 'D')
+#define mInfo() DLNetwork::MyOut(__FILENAME__, __LINE__, 'I')
+#define mWarning() DLNetwork::MyOut(__FILENAME__, __LINE__, 'W')
+#define mCritical() DLNetwork::MyOut(__FILENAME__, __LINE__, 'E')

@@ -2,6 +2,7 @@
 #include "uri-parse.h"
 #include "urlcodec.h"
 #include <memory>
+#include <string.h>
 #include <functional>
 
 using namespace DLNetwork;

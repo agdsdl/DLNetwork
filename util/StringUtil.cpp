@@ -103,7 +103,7 @@ void StringUtil::trim(std::string& str, char trimmed/* = ' '*/)
     trimRight(str, trimmed);
 }
 
-std::string hexmem(const void* buf, size_t len) {
+std::string DLNetwork::hexmem(const void* buf, size_t len) {
     std::string ret;
     char tmp[8];
     const uint8_t* data = (const uint8_t*)buf;
@@ -118,7 +118,7 @@ bool is_safe(uint8_t b) {
     return b >= ' ' && b < 128;
 }
 
-std::string hexdump(const void* buf, size_t len) {
+std::string DLNetwork::hexdump(const void* buf, size_t len) {
     std::string ret("\r\n");
     char tmp[8];
     const uint8_t* data = (const uint8_t*)buf;
