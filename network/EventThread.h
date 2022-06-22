@@ -59,6 +59,9 @@ class EventThread
 
 public:
 	friend class EventThreadPool;
+	//static EventThread* fromCurrentThread() {
+	//	return new EventThread(true);
+	//}
 	~EventThread() {};
 	void addEvent(int fd, int type, EventHandleFun&& callback);
 	void modifyEvent(int fd, int type);
@@ -91,7 +94,7 @@ protected:
 	bool _threadCancel;
 
 private:
-	EventThread();
+	EventThread(bool fromCurrentThread = false);
 };
 
 class EventThreadPool

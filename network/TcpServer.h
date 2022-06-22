@@ -46,7 +46,7 @@ public:
     void setConnectionAcceptCallback(const ConnectionAcceptCallback& cb) {
         _connectionCb = cb;
     }
-
+    EventThread* thread() { return _thread; }
 private:
     void onEvent(SOCKET sock, int eventType);
 

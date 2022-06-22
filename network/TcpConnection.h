@@ -115,3 +115,5 @@ private:
 };
 
 } // DLNetwork
+
+DLNetwork::MyOut& operator<<(DLNetwork::MyOut& o, DLNetwork::TcpConnection& c);

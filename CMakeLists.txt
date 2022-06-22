@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
+set(CMAKE_CXX_STANDARD 17)
 
 set(PLATFORM_ARM false)
 
@@ -24,3 +25,4 @@ endif()
 
 add_subdirectory(util)
 add_subdirectory(network)
+add_subdirectory(demo)

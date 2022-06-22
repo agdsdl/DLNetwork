@@ -48,14 +48,20 @@ static inline uint64_t getCurrentMicrosecondEpoch() {
 
 using namespace DLNetwork;
 
-EventThread::EventThread() :_threadCancel(false) {
+EventThread::EventThread(bool fromCurrentThread) :_threadCancel(false) {
     static std::atomic<int> n(1);
     char buf[64];
     snprintf(buf, sizeof(buf), "EventThread %d", n.load(std::memory_order_acquire));
     n++;
-	_thread = std::thread(std::bind(&EventThread::runloop, this));
-	_selfThreadid = _thread.get_id();
-    setThreadName(&_thread, buf);
+	if (!fromCurrentThread) {
+		_thread = std::thread(std::bind(&EventThread::runloop, this));
+		_selfThreadid = _thread.get_id();
+		setThreadName(&_thread, buf);
+	}
+	else {
+		_selfThreadid = std::this_thread::get_id();
+		setThreadName(buf);
+	}
 
 	SockUtil::setNoBlocked(_pipe.readFD());
 	SockUtil::setNoBlocked(_pipe.writeFD());

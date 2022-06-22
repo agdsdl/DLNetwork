@@ -32,6 +32,11 @@
 
 using namespace DLNetwork;
 
+DLNetwork::MyOut& operator<<(DLNetwork::MyOut& o, DLNetwork::TcpConnection& c) {
+    o << c.sock() << c.selfAddress().description() << "--" << c.peerAddress().description();
+    return o;
+}
+
 TcpConnection::TcpConnection(EventThread *thread, SOCKET sock):_thread(thread),_closing(false),_eventType(EventType::Read),_sock(sock)
 {
 }
