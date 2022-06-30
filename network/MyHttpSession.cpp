@@ -24,6 +24,7 @@
 #include "MyHttpSession.h"
 #include "StringUtil.h"
 #include <sstream>
+#include <string>
 
 using namespace DLNetwork;
 
@@ -39,7 +40,7 @@ Content-Length: 4864\r\n
 std::string MyHttpSession::makeupResponse(int code, const std::string& content) {
     std::ostringstream os;
     os << "HTTP/1.1 " << code << " " << HTTP::Response::respCode2string(code) << "\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: "
-        << content.length() << "\r\n\r\n"
+        << std::to_string(content.length()) << "\r\n\r\n"
         << content;
 
     return os.str();
