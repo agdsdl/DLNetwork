@@ -132,7 +132,7 @@ void TcpConnection::writeInThread(const char * buf, size_t size)
 void TcpConnection::close()
 {
     assert(_thread->isCurrentThread());
-    mDebug() << "TcpConnection::close()" << this->description().c_str();
+    //mDebug() << "TcpConnection::close()" << this->description().c_str();
     if (_closing) {
         return;
     }
@@ -272,7 +272,7 @@ bool TcpConnection::handleWrite(SOCKET sock)
 
 void TcpConnection::handleHangup(SOCKET sock)
 {
-    mWarning() << "TcpConnection net closed" << sock;
+    mWarning() << "TcpConnection handleHangup" << sock;
     close();
 }
 
@@ -280,6 +280,6 @@ void TcpConnection::handleError(SOCKET sock)
 {
     int ecode = SockUtil::getSockError(sock);
     const char *eMsg = uv_strerror(ecode);
-    mWarning() << "TcpConnection net error:" << sock << ecode << eMsg;
+    mWarning() << "TcpConnection handleError:" << sock << ecode << eMsg;
     close();
 }
