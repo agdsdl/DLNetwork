@@ -23,7 +23,6 @@
  */
 #include "HttpSession.h"
 #include <urlcodec.h>
-#include <locale.h>
 #include <string.h>
 #include <memory>
 
@@ -184,14 +183,16 @@ Request::ErrorCode HTTP::Request::deserialize(const char* buf, size_t bufLen) {
     Accept-Language: zh-CN, zh; q=0.9, en; q=0.8\r\n
     \r\n
     */
-    std::locale::global(std::locale("zh_CN.UTF-8"));
-
     std::unique_ptr<char[]> buf2 = std::make_unique<char[]>(bufLen + 100);
     url_decode(buf, bufLen, buf2.get(), bufLen + 100);
     int nLen = strlen(buf2.get());
     //std::cout << "url in:" << buf << "decode:" << buf2.get() << std::endl;
     std::vector<std::string> segments = split(buf2.get(), nLen, std::string(LINE_END) + std::string(LINE_END));
     //std::vector<std::string> segments = split(buf, bufLen, std::string(LINE_END) + std::string(LINE_END));
+    if (segments.size() < 1) {
+        std::cout << "HTTP Request line insufficent" << std::string(buf, bufLen > 40 ? 40 : bufLen) << std::endl;
+        return ErrorCode::RequestLineInsufficent;
+    }
 
     std::string headerSegment = std::move(segments[0]);
     segments.erase(segments.begin());

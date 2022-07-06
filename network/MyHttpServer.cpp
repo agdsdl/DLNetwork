@@ -28,6 +28,7 @@
 #include "StringUtil.h"
 #include "MyLog.h"
 #include <sstream>
+#include <locale.h>
 
 using namespace DLNetwork;
 
@@ -42,6 +43,8 @@ MyHttpServer::~MyHttpServer()
 
 bool MyHttpServer::start(const char *ip, int port)
 {
+    std::locale::global(std::locale("zh_CN.UTF-8"));
+    
     EventThread *thread = EventThreadPool::instance().debugThread();
     sockaddr_in addr;
     addr.sin_family = AF_INET;
