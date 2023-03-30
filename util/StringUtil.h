@@ -26,6 +26,10 @@ public:
 std::string hexmem(const void* buf, size_t len);
 std::string hexdump(const void* buf, size_t len);
 
+std::string BinToHex(const std::string& strBin, bool bIsUpper);
+std::string BinToHex(const uint8_t* buf, size_t len, bool bIsUpper);
+std::string HexToBin(const std::string& strHex);
+
 } //DLNetwork
 #define strstartswith(p, prefix)	(strncmp(p, prefix, strlen(prefix))? 0 : 1)
 #define strendswith(p, suffix)		(strncmp(p+strlen(p)-strlen(suffix), suffix, strlen(suffix))? 0 : 1)

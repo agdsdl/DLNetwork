@@ -1,5 +1,6 @@
 
 cmake_minimum_required(VERSION 3.8)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -23,7 +24,11 @@ add_library(network STATIC
     ${SRC_LIST}
 )
 
+find_package(Threads REQUIRED)
+target_link_libraries(network PUBLIC Threads::Threads)
+
 target_include_directories(network PRIVATE ../util)
+target_link_libraries(network PUBLIC util)
 
 target_include_directories(network PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 

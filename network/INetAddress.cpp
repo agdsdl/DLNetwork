@@ -84,6 +84,22 @@ INetAddress INetAddress::fromIp4Port(const char* ip, int port) {
 	}
 }
 
+INetAddress INetAddress::fromIp4PortInHost(uint32_t ip, int port) {
+	sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(ip);
+	return INetAddress(addr);
+}
+
+INetAddress INetAddress::fromIp4PortInNet(uint32_t ip, int port) {
+	sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_port = port;
+	addr.sin_addr.s_addr = ip;
+	return INetAddress(addr);
+}
+
 INetAddress INetAddress::fromIp6Port(const char* ip, int port) {
 	sockaddr_in6 addr;
 	addr.sin6_family = AF_INET6;

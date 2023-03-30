@@ -108,11 +108,11 @@ public:
 		}
 		_thread->modifyEvent(_sock, _eventType);
 	}
+	int flushBuf();
 
 private:
 	void onEvent(SOCKET sock, int eventType);
 	void onWritable();
-	int flushBuf();
 	size_t _bufSize = DEFAULT_SEND_BUF_SIZE;
 	char* _sendBuf;
 	RingBuffer _ringSendBuf;

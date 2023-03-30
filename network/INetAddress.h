@@ -68,15 +68,17 @@ public:
 	bool isIP4() {
 		return _addr4.sin_family == AF_INET;
 	}
-	sockaddr_in& addr4() {
+	const sockaddr_in& addr4() const {
 		return _addr4;
 	}
-	sockaddr_in6& addr6() {
+	const sockaddr_in6& addr6() const {
 		return _addr6;
 	}
 	static INetAddress getPeerAddress(SOCKET s);
 	static INetAddress getSelfAddress(SOCKET s);
 	static INetAddress fromIp4Port(const char* ip, int port);
+	static INetAddress fromIp4PortInHost(uint32_t ip, int port);
+	static INetAddress fromIp4PortInNet(uint32_t ip, int port);
 	static INetAddress fromIp6Port(const char* ip, int port);
 	static INetAddress fromDomainPort(const char* domain, int port);
 
