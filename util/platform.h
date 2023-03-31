@@ -48,7 +48,11 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <netdb.h>
+#ifdef __APPLE__
+#include <machine/endian.h>
+#else
 #include <endian.h>
+#endif
 #include <sys/uio.h>
 #include <sys/syscall.h>
 

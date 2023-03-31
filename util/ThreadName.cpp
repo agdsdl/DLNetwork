@@ -83,4 +83,16 @@ void DLNetwork::setThreadName(std::thread* thread, const char* threadName)
     auto handle = thread->native_handle();
     pthread_setname_np(handle, threadName);
 }
+#elif defined(__APPLE__)
+#include <pthread.h>
+
+void DLNetwork::setThreadName(const char* threadName)
+{
+    pthread_setname_np(threadName);
+}
+
+void DLNetwork::setThreadName(std::thread* thread, const char* threadName)
+{
+}
+
 #endif
