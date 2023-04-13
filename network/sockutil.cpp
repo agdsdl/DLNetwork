@@ -519,7 +519,6 @@ string SockUtil::get_peer_ip(int fd) {
 
 int SockUtil::bindSock(int sockFd,const char *ifr_ip,uint16_t port){
 	struct sockaddr_in servaddr;
-    servaddr.sin_len = sizeof(servaddr);
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(port);
 	servaddr.sin_addr.s_addr = inet_addr(ifr_ip);
