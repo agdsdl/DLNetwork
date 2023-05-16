@@ -25,8 +25,23 @@
 #include "StringUtil.h"
 #include <sstream>
 #include <string>
+#include <MyLog.h>
 
 using namespace DLNetwork;
+
+DLNetwork::MyHttpSession::~MyHttpSession() {
+    stop();
+    mInfo() << "~MyHttpSession" << this;
+}
+
+void DLNetwork::MyHttpSession::stop()
+{
+    if (_closeTimer) {
+        thread()->delTimer(_closeTimer);
+        _closeTimer = nullptr;
+    }
+}
+
 
 //组装http协议应答包
 /*
@@ -110,7 +125,22 @@ void MyHttpSession::responseFile(std::string filePath) {
 
 void MyHttpSession::beginFile(std::string fname, std::string contentType) {
     HTTP::Response resp;
-    resp.version = HTTP::Version::HTTP_1_1;
+    if (version == "HTTP/1.0")
+    {
+        resp.version = HTTP::Version::HTTP_1_0;
+    }
+    else if (version == "HTTP/1.1")
+    {
+        resp.version = HTTP::Version::HTTP_1_1;
+        resp.headers["Cache-Control"] = "no-cache";
+        //resp.headers["Access-Control-Expose-Headers"] = "X-Requested-With";
+        //resp.headers["Expires"] = "-1";
+        //resp.headers["Pragma"] = "no-cache";
+    }
+    else
+    {
+        resp.version = HTTP::Version::HTTP_1_1;
+    }
     resp.responseCode = HTTP::Response::OK;
     if (contentType.empty()) {
         resp.headers["Content-Type"] = "application/octet-stream";
@@ -122,7 +152,7 @@ void MyHttpSession::beginFile(std::string fname, std::string contentType) {
         resp.headers["Content-Disposition"] = std::string("attachment; filename=\"") + fname + "\"";
     }
     resp.headers["Transfer-Encoding"] = "chunked";
-
+    //resp.headers["Access-Control-Allow-Origin"] = "*";
     std::string str = resp.serialize();
     _conn->write(str.c_str(), str.size());
     refreshCloseTimer();
@@ -130,7 +160,9 @@ void MyHttpSession::beginFile(std::string fname, std::string contentType) {
 
 void MyHttpSession::writeFile(std::string content) {
     std::stringstream stream;
-    stream << std::hex << content.size() << "\r\n" << content << "\r\n";
+    char szHex[16] = { 0 };
+    sprintf(szHex, "%zx", content.size());
+    stream << szHex << "\r\n" << content << "\r\n";
     _conn->write(stream.str().c_str(), stream.str().size());
     refreshCloseTimer();
 }
@@ -152,6 +184,7 @@ void MyHttpSession::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
     if (e == ConnectEvent::Closed) {
         _closed = true;
         for (auto& onclose: _closeHandlers) {
+            stop();
             onclose(shared_from_this());
         }
         //if (_closedHandler) {
@@ -174,6 +207,13 @@ bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
     if (ecode != HTTP::Request::ErrorCode::OK) {
         conn.close();
         return false;
+    }
+
+    if (req.version == HTTP::Version::HTTP_1_0) {
+        version = "HTTP/1.0";
+    }
+    if (req.version == HTTP::Version::HTTP_1_1) {
+        version = "HTTP/1.1";
     }
 
     if (_handler) {
@@ -204,17 +244,20 @@ void MyHttpSession::onWriteDone(TcpConnection& conn) {
 }
 
 void MyHttpSession::refreshCloseTimer() {
-    thread()->dispatch([this]() {
-        if (_closeTimer) {
-            connection().getThread()->delTimerInLoop(_closeTimer);
-        }
-        std::weak_ptr<MyHttpSession> weakThis(shared_from_this());
-        _closeTimer = connection().getThread()->addTimerInLoop(30000, [weakThis](void*) {
-            if (auto strongThis = weakThis.lock()) {
-                strongThis->connection().closeAfterWrite();
+    std::weak_ptr<MyHttpSession> weakThis(shared_from_this());
+    thread()->dispatch([weakThis]() {
+        if (auto strongThis = weakThis.lock()) {
+            if (strongThis->_closeTimer) {
+                strongThis->thread()->delTimerInLoop(strongThis->_closeTimer);
+                strongThis->_closeTimer = nullptr;
             }
-            return 0;
-            });
+            strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
+                if (auto strongThis = weakThis.lock()) {
+                    strongThis->connection().closeAfterWrite();
+                }
+                return 0;
+                });
+        }
 
         });
 }

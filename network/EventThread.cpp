@@ -139,6 +139,24 @@ bool EventThread::delTimerInLoop(Timer* t) {
 	return _timerMan.delTimer(t);
 }
 
+void EventThread::delTimer(Timer* t) {
+	if (isCurrentThread()) {
+		delTimerInLoop(t);
+	}
+	else {
+		bool done = false;
+		dispatch([this, t, &done]() {
+			delTimerInLoop(t);
+			std::unique_lock<std::mutex> lock(_timerMutex);
+			done = true;
+			lock.unlock();
+			_timerCV.notify_all();
+			});
+		std::unique_lock<std::mutex> lk(_timerMutex);
+		_timerCV.wait(lk, [this, &done] {return done; });
+	}
+}
+
 void EventThread::delay(unsigned int ms, Timer::TIMER_FUN && task, void* arg)
 {
 	dispatch([this, ms, task, arg]() {
@@ -237,6 +255,7 @@ void EventThread::loopOnce()
 void EventThread::runloop()
 {
 	while (!_threadCancel) {
+		_checkTime = time(NULL);
 		if (_event_map.size() == 0) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			continue;
@@ -253,6 +272,17 @@ void EventThreadPool::init(int poolSize)
 		_threads.push_back(t);
 	}
     _debugThread = new EventThread();
+	std::thread t(&EventThreadPool::runloop, this);
+	t.detach();
+}
+
+void EventThreadPool::fini()
+{
+	for (size_t i = 0; i < _threads.size(); i++) {
+		delete _threads[i];
+	}
+	_threads.clear();
+	delete _debugThread;
 }
 
 EventThreadPool& EventThreadPool::instance()
@@ -272,4 +302,20 @@ EventThread * EventThreadPool::getIdlestThread()
 		}
 	}
 	return ret;
+}
+
+void DLNetwork::EventThreadPool::runloop()
+{
+	for (;;) {
+		time_t now = time(NULL);
+		for (auto t : _threads) {
+			if (t->_checkTime) {
+				int delta = now - t->_checkTime;
+				if (delta > 12) {
+					mWarning() << "eventThread" << t << "blocked! checktime" << t->_checkTime << "block time" << delta;
+				}
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+	}
 }

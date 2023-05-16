@@ -36,8 +36,8 @@ public:
     typedef std::function<void(std::shared_ptr<MyHttpSession> sess)> ClosedHandler;
     MyHttpSession(std::unique_ptr<TcpConnection>&& conn) :_conn(std::move(conn)), _closed(false) {
     }
-    ~MyHttpSession() {}
-
+    ~MyHttpSession();
+    void stop();
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
     }

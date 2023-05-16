@@ -33,6 +33,7 @@
 #include <assert.h>
 #include "PipeWrap.h"
 #include "TimerManager.h"
+#include <time.h>
 
 namespace DLNetwork {
 
@@ -62,7 +63,13 @@ public:
 	//static EventThread* fromCurrentThread() {
 	//	return new EventThread(true);
 	//}
-	~EventThread() {};
+	~EventThread() {
+		if (!_threadCancel)
+		{
+			_threadCancel = true;
+			_thread.join();
+		}
+	};
 	void addEvent(int fd, int type, EventHandleFun&& callback);
 	void modifyEvent(int fd, int type);
 	void removeEvents(int fd);
@@ -70,6 +77,7 @@ public:
 	void dispatch(TASK_FUN&& task, bool insertFront = false, bool tryNoQueue = false);
 	Timer* addTimerInLoop(unsigned int ms, Timer::TIMER_FUN task, void* arg = NULL);
 	bool delTimerInLoop(Timer* t);
+	void delTimer(Timer* t);
 	void delay(unsigned int ms, Timer::TIMER_FUN&& task, void* arg = NULL);
 	bool isCurrentThread() {
 		auto id = std::this_thread::get_id();
@@ -93,6 +101,10 @@ protected:
 	PipeWrap _pipe;
 	bool _threadCancel;
 
+	time_t _checkTime = 0;
+	std::mutex _timerMutex;
+	std::condition_variable _timerCV;
+
 private:
 	EventThread(bool fromCurrentThread = false);
 };
@@ -105,10 +117,12 @@ public:
 	static EventThreadPool& instance();
 
 	void init(int poolSize = 4);
+	void fini();
 	EventThread* getIdlestThread();
 	EventThread* debugThread() {
 		return _debugThread;
 	}
+	void runloop();
 private:
 	std::vector<EventThread*> _threads;
 	EventThread* _debugThread = nullptr;
