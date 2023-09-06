@@ -26,9 +26,17 @@ add_library(network STATIC
 
 find_package(Threads REQUIRED)
 target_link_libraries(network PUBLIC Threads::Threads)
+target_compile_options(network PUBLIC "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/wd4819>")
+target_compile_options(network PUBLIC "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/wd4828>")
+
+if(ENABLE_OPENSSL)
+find_package(OpenSSL REQUIRED)
+target_link_libraries(network PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+target_compile_definitions(network PUBLIC ENABLE_OPENSSL)
+endif()
 
 target_include_directories(network PRIVATE ../util)
-target_link_libraries(network PUBLIC util)
+# target_link_libraries(network PUBLIC util)
 
 target_include_directories(network PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 

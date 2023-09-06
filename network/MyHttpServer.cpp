@@ -28,56 +28,38 @@
 #include "StringUtil.h"
 #include "MyLog.h"
 #include <sstream>
-#include <locale.h>
 
 using namespace DLNetwork;
 
-MyHttpServer::MyHttpServer()
-{
-}
+//_MyHttpServer::_MyHttpServer()
+//{
+//}
+//
+//
+//_MyHttpServer::~_MyHttpServer()
+//{
+//}
+//
+//bool _MyHttpServer::start(const char *ip, int port, const char* certFile, const char* keyFile)
+//{
+//}
 
+//void _MyHttpServer::onConnection(std::unique_ptr<TcpConnection>&& conn)
+//{
+    //pConn->setConnectCallback(std::bind(&_MyHttpServer::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
+    //pConn->setOnMessage(std::bind(&_MyHttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2));
+    //pConn->setOnWriteDone(std::bind(&_MyHttpServer::onWriteDone, this, std::placeholders::_1));
+//}
 
-MyHttpServer::~MyHttpServer()
-{
-}
-
-bool MyHttpServer::start(const char *ip, int port)
-{
-    std::locale::global(std::locale("zh_CN.UTF-8"));
-    
-    EventThread *thread = EventThreadPool::instance().debugThread();
-    sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = DLNetwork::hostToNetwork16(port);
-
-    if (::inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
-        mCritical() << "MyHttpServer inet_pton failed" << get_uv_errmsg();
-        return false;
-    }
-    _tcpServer.setConnectionAcceptCallback(std::bind(&MyHttpServer::onConnection, this, std::placeholders::_1));
-    return _tcpServer.start(thread, addr, "myhttpserver", true);
-}
-
-void MyHttpServer::onConnection(std::unique_ptr<TcpConnection>&& conn)
-{
-    TcpConnection *pConn = conn.get();
-    auto session = std::make_shared<MyHttpSession>(std::move(conn));
-    session->setUrlHandler(std::bind(&MyHttpServer::urlHanlder, this, std::placeholders::_1, std::placeholders::_2));
-    session->addClosedHandler(std::bind(&MyHttpServer::closedHandler, this, std::placeholders::_1));
-    _conn_session[pConn] = session;
-    session->takeoverConn();
-    //pConn->setConnectCallback(std::bind(&MyHttpServer::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
-    //pConn->setOnMessage(std::bind(&MyHttpServer::onMessage, this, std::placeholders::_1, std::placeholders::_2));
-    //pConn->setOnWriteDone(std::bind(&MyHttpServer::onWriteDone, this, std::placeholders::_1));
-}
-
-//void MyHttpServer::onConnectionChange(TcpConnection & conn, ConnectEvent e)
+//void _MyHttpServer::onConnectionChange(TcpConnection & conn, ConnectEvent e)
 //{
 //    if (e == ConnectEvent::Closed) {
+//        _conn_session[&conn]->onConnectionChange(conn, e);
 //        _conn_session.erase(&conn);
 //    }
 //}
-//bool MyHttpServer::onMessage(TcpConnection & conn, DLNetwork::Buffer *buf)
+
+//bool _MyHttpServer::onMessage(TcpConnection & conn, DLNetwork::Buffer *buf)
 //{
 //    assert(false);
 //    std::string inbuf;
@@ -125,7 +107,7 @@ void MyHttpServer::onConnection(std::unique_ptr<TcpConnection>&& conn)
 //        return false;
 //    }
 //    std::string method = chunk[0];
-//    //mInfo() << "MyHttpServer::onMessage" << "url" << chunk[1].c_str();
+//    //mInfo() << "_MyHttpServer::onMessage" << "url" << chunk[1].c_str();
 //    //inbuf = /register.do?p={%22username%22:%20%2213917043329%22,%20%22nickname%22:%20%22balloon%22,%20%22password%22:%20%22123%22}
 //    std::vector<std::string> part;
 //    //通过?分割成前后两端，前面是url，后面是参数
@@ -165,16 +147,12 @@ void MyHttpServer::onConnection(std::unique_ptr<TcpConnection>&& conn)
 //    return false;
 //}
 //
-//void MyHttpServer::onWriteDone(TcpConnection & conn)
+//void _MyHttpServer::onWriteDone(TcpConnection & conn)
 //{
 //}
 
-void MyHttpServer::closedHandler(std::shared_ptr<MyHttpSession> sess) {
-    _conn_session.erase(&sess->connection());
-}
-
-void MyHttpServer::urlHanlder(HTTP::Request& request, std::shared_ptr<MyHttpSession> sess) {
-    if (_handler) {
-        _handler(request, sess);
-    }
-}
+//void _MyHttpServer::closedHandler(std::shared_ptr<MyHttpSession> sess) {
+//}
+//
+//void _MyHttpServer::urlHanlder(HTTP::Request& request, std::shared_ptr<MyHttpSession> sess) {
+//}

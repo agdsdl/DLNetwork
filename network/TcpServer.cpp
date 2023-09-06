@@ -76,13 +76,13 @@ void TcpServer::stop()
 }
 
 void TcpServer::onEvent(SOCKET sock, int eventType) {
-    EventThread* t = EventThreadPool::instance().getIdlestThread();
-    t->dispatch([sock, t, this, eventType]() {
+    //EventThread* t = EventThreadPool::instance().getIdlestThread();
+    //t->dispatch([sock, t, this, eventType]() {
         sockaddr_in clientAddr;
         socklen_t nLen = sizeof(sockaddr_in);
         SOCKET fsock = ::accept(sock, (sockaddr*)&clientAddr, &nLen);
         if (fsock != -1) {
-            auto conn = std::make_unique<TcpConnection>(t, fsock);
+            auto conn = std::make_unique<TcpConnection>(_thread, fsock);
             if (_connectionCb) {
                 _connectionCb(std::move(conn));
             }
@@ -90,5 +90,5 @@ void TcpServer::onEvent(SOCKET sock, int eventType) {
         else {
             //mWarning() << "TcpServer::onEvent accept error" << get_uv_errmsg();
         }
-    });
+    //});
 }

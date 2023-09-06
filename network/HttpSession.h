@@ -116,6 +116,8 @@ public:
     }
 };
 
+void urlParamParse(const std::string& url, std::string& path, std::map<std::string, std::string>& urlParams) noexcept;
+
 class Request
 {
 public:

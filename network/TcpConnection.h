@@ -27,6 +27,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#ifdef ENABLE_OPENSSL
+#include <openssl/types.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#endif // ENABLE_OPENSSL
 #include "EventThread.h"
 #include "sockutil.h"
 #include "Buffer.h"
@@ -48,8 +53,10 @@ public:
 
     TcpConnection(EventThread* thread, SOCKET sock);
     ~TcpConnection();
+#ifdef ENABLE_OPENSSL
+    void enableTls(std::string certFile, std::string keyFile, bool supportH2=true);
+#endif // ENABLE_OPENSSL
     static std::unique_ptr<TcpConnection> connectTo(EventThread* thread, INetAddress addr);
-
     void attach();
     void setPeerAddr(INetAddress addr) {
         _peerAddr = addr;
@@ -91,7 +98,8 @@ public:
     }
     std::string description();
     void closeAfterWrite();
-private:
+protected:
+    void writeInner(const char* buf, size_t size);
     void onEvent(SOCKET sock, int eventType);
     bool handleRead(SOCKET sock);
     bool handleWrite(SOCKET sock);
@@ -112,6 +120,19 @@ private:
     INetAddress _peerAddr;
     INetAddress _selfAddr;
     bool _closeAfterWrite = false;
+
+#ifdef ENABLE_OPENSSL
+    void handleSSLRead();
+
+    SSL_CTX* _ctx = nullptr;
+    SSL* _ssl = nullptr;
+    BIO* _rbio = nullptr;
+    BIO* _wbio = nullptr;
+    bool _enableTls = false;
+    std::string _certFile;
+    std::string _keyFile;
+    DLNetwork::Buffer _readTlsBuf;
+#endif // ENABLE_OPENSSL
 };
 
 } // DLNetwork

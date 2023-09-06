@@ -28,18 +28,19 @@
 #include <set>
 #include "TcpConnection.h"
 #include "HttpSession.h"
-
+#include "H2Frame.h"
+#include "HPacker.h"
+#include "MyHttp2Stream.h"
 
 namespace DLNetwork {
-class MyHttpSession : public std::enable_shared_from_this<MyHttpSession> {
+class MyHttp2Session : public std::enable_shared_from_this<MyHttp2Session> {
 public:
-    typedef MyHttpSession CallbackSession;
-    enum { supportH2 = false };
-
+    typedef DLNetwork::MyHttp2Stream CallbackSession;
+    enum {supportH2 = true};
     typedef std::function<void(HTTP::Request& request, std::shared_ptr<CallbackSession> sess)> UrlHandler;
-    typedef std::function<void(std::shared_ptr<MyHttpSession> sess)> ClosedHandler;
-    MyHttpSession(std::unique_ptr<TcpConnection>&& conn);
-    ~MyHttpSession();
+    typedef std::function<void(std::shared_ptr<MyHttp2Session> sess)> ClosedHandler;
+    MyHttp2Session(std::unique_ptr<TcpConnection>&& conn);
+    ~MyHttp2Session();
     void stop();
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
@@ -53,25 +54,14 @@ public:
     //void clearClosedHandler() {
     //    _closeHandlers.clear();
     //}
-
-    std::string makeupResponse(int code, const std::string& content);
-
-    void response(std::string content);
-    void response(int code, std::string content);
-    void responseFile(std::string content, std::string fname, std::string contentType);
-    void responseFile(std::string filePath);
-    void beginFile(std::string fname, std::string contentType);
-    void writeFile(std::string content);
-    void endFile();
-    void closeAfterWrite() {
-        _conn->closeAfterWrite();
-    }
     TcpConnection& connection() { return *_conn.get(); }
     EventThread* thread() { return _conn->getThread(); }
     void takeoverConn();
     std::string description() {
         return _conn->description();
     }
+    int sendH2Frame(H2Frame* frame);
+
     std::string version;
     std::string method;
     std::string uri;
@@ -80,14 +70,65 @@ private:
     void onConnectionChange(TcpConnection& conn, ConnectEvent e);
     bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
     void onWriteDone(TcpConnection& conn);
-
+    void closeStream(std::shared_ptr<MyHttp2Stream> stream);
+    void onStreamEnd(std::shared_ptr<MyHttp2Stream> stream);
     void refreshCloseTimer();
+
     void send(const char* buf, size_t size);
+    int sendHeadersFrame(HeadersFrame* frame);
+    void applySettings(SettingsFrame* frame);
+    void setInitialWindowsSize(uint32_t size) {
+        _initialWindowSize = size;
+        // _curWindowSize = size;
+    }
+    void updateWindowSize(uint32_t delta) {
+
+    }
+    void setMaxFrameSize(uint32_t size) {
+        _maxFrameSize = size;
+    }
+    void setMaxHeaderListSize(uint32_t size){
+        _maxHeaderListSize = size;
+    }
+    H2Frame* parseFrame(const FrameHeader& hdr, const uint8_t* payload);
+    void parseHeaders(Buffer& buf, bool endStream, std::shared_ptr<MyHttp2Stream>& stream) {
+        parseHeaders((const uint8_t*)buf.peek(), buf.readableBytes(), endStream, stream);
+        buf.retrieveAll();
+    }
+    void parseHeaders(const uint8_t* buf, size_t size, bool endStream, std::shared_ptr<MyHttp2Stream>& stream);
+    std::shared_ptr<MyHttp2Stream> getOrGenStream(uint32_t streamId);
+    void connectionError(H2Error err);
+    void healthCheck();
     std::unique_ptr<TcpConnection> _conn;
     bool _closed;
+    Timer* _closeTimer = nullptr;
     UrlHandler _handler;
     //ClosedHandler _closedHandler;
     std::vector<ClosedHandler> _closeHandlers;
-    Timer* _closeTimer = nullptr;
+
+    std::unordered_map<uint32_t, std::shared_ptr<MyHttp2Stream>> _streams;
+    Buffer _headersBuf;
+    hpack::HPacker _hpack;
+    int _state = 0;
+    uint32_t _lastStreamId = 0;
+    uint32_t _initialWindowSize = 64*1024;
+    uint32_t _maxFrameSize = 16*1024;
+    uint32_t _maxHeaderListSize;
+    //uint32_t _curWindowSize;
+    bool _wantContinueFrame = false;
+    bool _continueEndStream = false;
+
+    FrameHeader _frameHeader;
+    DataFrame _dataFrame;
+    HeadersFrame _headersFrame;
+    PriorityFrame _priFrame;
+    RSTStreamFrame _rstFrame;
+    SettingsFrame _setFrame;
+    PushPromiseFrame _pushpFrame;
+    PingFrame _pingFrame;
+    GoawayFrame _goawayFrame;
+    WindowUpdateFrame _wndUpFrame;
+    ContinuationFrame _contFrame;
+
 };
 } //DLNetwork

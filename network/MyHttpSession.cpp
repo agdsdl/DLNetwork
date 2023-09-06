@@ -23,11 +23,16 @@
  */
 #include "MyHttpSession.h"
 #include "StringUtil.h"
+#include "cppdefer.h"
 #include <sstream>
 #include <string>
 #include <MyLog.h>
 
+
 using namespace DLNetwork;
+
+DLNetwork::MyHttpSession::MyHttpSession(std::unique_ptr<TcpConnection>&& conn) :_conn(std::move(conn)), _closed(false) {
+}
 
 DLNetwork::MyHttpSession::~MyHttpSession() {
     stop();
@@ -39,6 +44,9 @@ void DLNetwork::MyHttpSession::stop()
     if (_closeTimer) {
         thread()->delTimer(_closeTimer);
         _closeTimer = nullptr;
+    }
+    if (_conn) {
+        _conn->close();
     }
 }
 
@@ -63,12 +71,12 @@ std::string MyHttpSession::makeupResponse(int code, const std::string& content) 
 
 void MyHttpSession::response(std::string content) {
     auto resp = makeupResponse(200, content);
-    _conn->write(resp.c_str(), resp.size());
+    send(resp.c_str(), resp.size());
 }
 
 void MyHttpSession::response(int code, std::string content) {
     auto resp = makeupResponse(code, content);
-    _conn->write(resp.c_str(), resp.size());
+    send(resp.c_str(), resp.size());
 }
 
 void MyHttpSession::responseFile(std::string content, std::string fname, std::string contentType) {
@@ -87,8 +95,8 @@ void MyHttpSession::responseFile(std::string content, std::string fname, std::st
     resp.headers["Content-Length"] = content.size();
 
     std::string str = resp.serialize();
-    _conn->write(str.c_str(), str.size());
-    _conn->write(content.c_str(), content.size());
+    send(str.c_str(), str.size());
+    send(content.c_str(), content.size());
     _conn->closeAfterWrite();
 }
 
@@ -132,10 +140,10 @@ void MyHttpSession::beginFile(std::string fname, std::string contentType) {
     else if (version == "HTTP/1.1")
     {
         resp.version = HTTP::Version::HTTP_1_1;
-        resp.headers["Cache-Control"] = "no-cache";
-        //resp.headers["Access-Control-Expose-Headers"] = "X-Requested-With";
-        //resp.headers["Expires"] = "-1";
-        //resp.headers["Pragma"] = "no-cache";
+        resp.headers["Access-Control-Allow-Methods"] = "no-cache";
+        resp.headers["Access-Control-Expose-Headers"] = "X-Requested-With";
+        resp.headers["Expires"] = "-1";
+        resp.headers["Pragma"] = "no-cache";
     }
     else
     {
@@ -152,9 +160,9 @@ void MyHttpSession::beginFile(std::string fname, std::string contentType) {
         resp.headers["Content-Disposition"] = std::string("attachment; filename=\"") + fname + "\"";
     }
     resp.headers["Transfer-Encoding"] = "chunked";
-    //resp.headers["Access-Control-Allow-Origin"] = "*";
+    resp.headers["Access-Control-Allow-Origin"] = "*";
     std::string str = resp.serialize();
-    _conn->write(str.c_str(), str.size());
+    send(str.c_str(), str.size());
     refreshCloseTimer();
 }
 
@@ -163,13 +171,13 @@ void MyHttpSession::writeFile(std::string content) {
     char szHex[16] = { 0 };
     sprintf(szHex, "%zx", content.size());
     stream << szHex << "\r\n" << content << "\r\n";
-    _conn->write(stream.str().c_str(), stream.str().size());
+    send(stream.str().c_str(), stream.str().size());
     refreshCloseTimer();
 }
 
 void MyHttpSession::endFile() {
     const char* end = "0\r\n\r\n";
-    _conn->write(end, 5);
+    send(end, 5);
     _conn->closeAfterWrite();
 }
 
@@ -187,6 +195,7 @@ void MyHttpSession::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
             stop();
             onclose(shared_from_this());
         }
+        _closeHandlers.clear();
         //if (_closedHandler) {
         //    _closedHandler(shared_from_this());
         //}
@@ -197,6 +206,8 @@ bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
     std::string inbuf;
     //先把所有数据都取出来
     inbuf.append(buf->peek(), buf->readableBytes());
+    DEFER(buf->retrieveAll(););
+
     //因为一个http包头的数据至少\r\n\r\n，所以大于4个字符
     //小于等于4个字符，说明数据未收完，退出，等待网络底层接着收取
     if (inbuf.length() <= 4)
@@ -236,7 +247,6 @@ bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
     if (!close) {
         refreshCloseTimer();
     }
-    buf->retrieveAll();
     return true;
 }
 
@@ -260,4 +270,9 @@ void MyHttpSession::refreshCloseTimer() {
         }
 
         });
+}
+
+void DLNetwork::MyHttpSession::send(const char* buf, size_t size)
+{
+    _conn->write(buf, size);
 }

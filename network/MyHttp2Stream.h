@@ -28,33 +28,25 @@
 #include <set>
 #include "TcpConnection.h"
 #include "HttpSession.h"
-
+#include "H2Frame.h"
+//#include "MyHttp2Session.h"
 
 namespace DLNetwork {
-class MyHttpSession : public std::enable_shared_from_this<MyHttpSession> {
+    class MyHttp2Session;
+class MyHttp2Stream : public std::enable_shared_from_this<MyHttp2Stream> {
 public:
-    typedef MyHttpSession CallbackSession;
-    enum { supportH2 = false };
-
-    typedef std::function<void(HTTP::Request& request, std::shared_ptr<CallbackSession> sess)> UrlHandler;
-    typedef std::function<void(std::shared_ptr<MyHttpSession> sess)> ClosedHandler;
-    MyHttpSession(std::unique_ptr<TcpConnection>&& conn);
-    ~MyHttpSession();
+    MyHttp2Stream(uint32_t streamId, DLNetwork::MyHttp2Session* session, uint32_t initWindowSize, uint32_t maxFrameSize);
+    ~MyHttp2Stream();
+    typedef std::function<void(HTTP::Request& request, std::shared_ptr<MyHttp2Stream> sess)> UrlHandler;
+    typedef std::function<void(std::shared_ptr<MyHttp2Stream> sess)> ClosedHandler;
     void stop();
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
     }
-    //void setClosedHandler(ClosedHandler handler) {
-    //    _closedHandler = handler;
-    //}
+
     void addClosedHandler(ClosedHandler&& handler) {
         _closeHandlers.push_back(std::move(handler));
     }
-    //void clearClosedHandler() {
-    //    _closeHandlers.clear();
-    //}
-
-    std::string makeupResponse(int code, const std::string& content);
 
     void response(std::string content);
     void response(int code, std::string content);
@@ -64,30 +56,33 @@ public:
     void writeFile(std::string content);
     void endFile();
     void closeAfterWrite() {
-        _conn->closeAfterWrite();
+        //_conn->closeAfterWrite();
     }
-    TcpConnection& connection() { return *_conn.get(); }
-    EventThread* thread() { return _conn->getThread(); }
-    void takeoverConn();
-    std::string description() {
-        return _conn->description();
-    }
+    EventThread* thread();
+    std::string description();
+    uint32_t streamId() { return _streamId; }
+
+    void updateWindowSize(uint32_t delta){}
+    void onHeadersFrame(HeaderVector& headers, bool isEnd);
+    void onDataFrame(const uint8_t* data, size_t size, bool isEnd);
+    void onRstStreamFrame(uint32_t reason);
+
     std::string version;
     std::string method;
     std::string uri;
     std::map<std::string, std::string> urlParams;
 private:
-    void onConnectionChange(TcpConnection& conn, ConnectEvent e);
-    bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
-    void onWriteDone(TcpConnection& conn);
-
-    void refreshCloseTimer();
+    HTTP::Request _request;
+    uint32_t _streamId;
+    MyHttp2Session* _session;
     void send(const char* buf, size_t size);
-    std::unique_ptr<TcpConnection> _conn;
+    int sendHeaders(const HeaderVector& headers, bool endStream);
+    int sendData(const uint8_t* data, size_t size, bool endStream);
     bool _closed;
     UrlHandler _handler;
     //ClosedHandler _closedHandler;
+    uint32_t _initWindowSize;
+    uint32_t _maxFrameSize;
     std::vector<ClosedHandler> _closeHandlers;
-    Timer* _closeTimer = nullptr;
 };
 } //DLNetwork

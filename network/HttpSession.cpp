@@ -150,6 +150,35 @@ Version HTTP::version_from_string(const std::string& version) noexcept {
     return Version::HTTP_UNKNOWN;
 }
 
+void DLNetwork::HTTP::urlParamParse(const std::string& url, std::string& path, std::map<std::string, std::string>& urlParams) noexcept
+{
+    std::vector<std::string> part = split(url, "?");
+    path = part[0];
+    if (part.size() > 1) {
+        char* sp;
+        char* orip = (char*)malloc(part[1].size() + 1);
+        char* p = orip;
+        strcpy(p, part[1].c_str());
+        do {
+            sp = strchr(p, '=');
+            if (!sp) {
+                break;
+            }
+            *sp = NULL;
+            char* key = p;
+            p = sp + 1;
+            char* val = p;
+            sp = strchr(p, '&');
+            if (sp) {
+                *sp = NULL;
+                p = sp + 1;
+            }
+            urlParams.emplace(key, val);
+        } while (sp);
+        free(orip);
+    }
+}
+
 std::string HTTP::Request::serialize() const noexcept {
     std::string request;
     request += to_string(this->method);
@@ -215,31 +244,7 @@ Request::ErrorCode HTTP::Request::deserialize(const char* buf, size_t bufLen) {
     resource = headerSegments[1];
     version = version_from_string(headerSegments[2]);
 
-    std::vector<std::string> part = split(resource, "?");
-    path = part[0];
-    if (part.size() > 1) {
-        char* sp;
-        char* orip = (char*)malloc(part[1].size() + 1);
-        char* p = orip;
-        strcpy(p, part[1].c_str());
-        do {
-            sp = strchr(p, '=');
-            if (!sp) {
-                break;
-            }
-            *sp = NULL;
-            char* key = p;
-            p = sp + 1;
-            char* val = p;
-            sp = strchr(p, '&');
-            if (sp) {
-                *sp = NULL;
-                p = sp + 1;
-            }
-            urlParams.emplace(key, val);
-        } while (sp);
-        free(orip);
-    }
+    urlParamParse(resource, path, urlParams);
 
     for (std::size_t i = 1; i < lines.size(); i++) {
         if (lines[i].size() > 0) {
