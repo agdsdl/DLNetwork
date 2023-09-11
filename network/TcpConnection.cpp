@@ -194,6 +194,10 @@ void TcpConnection::writeInner(const char* buf, size_t size)
 
 void TcpConnection::write(const char * buf, size_t size)
 {
+    if (_closing) {
+        mWarning() << "TcpConnection::write when closing" << size;
+        return;
+    }
 #ifdef ENABLE_OPENSSL
     if (_enableTls) {
         do {
@@ -416,7 +420,7 @@ bool TcpConnection::handleRead(SOCKET sock)
         return false;
     }
     else {
-        mWarning() << "TcpConnection read error" << ecode << get_uv_errmsg();
+        mWarning() << "TcpConnection read" << sock << "error:" << ecode << get_uv_errmsg();
         close();
         return false;
     }

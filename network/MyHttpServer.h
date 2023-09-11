@@ -78,9 +78,11 @@ private:
     void onConnection(std::unique_ptr<TcpConnection>&& conn) {
         TcpConnection* pConn = conn.get();
         auto session = std::make_shared<SESSION>(std::move(conn));
+#ifdef ENABLE_OPENSSL
         if (_certFile.size()) {
             pConn->enableTls(_certFile, _keyFile, SESSION::supportH2);
         }
+#endif // ENABLE_OPENSSL
         session->setUrlHandler(std::bind(&_MyHttpServer::urlHanlder, this, std::placeholders::_1, std::placeholders::_2));
         session->addClosedHandler(std::bind(&_MyHttpServer::closedHandler, this, std::placeholders::_1));
         _conn_session[pConn] = session;

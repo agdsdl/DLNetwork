@@ -32,26 +32,26 @@ public:
 	~RingBuffer();
 
 	/*
-	* function:Ïò»º³åÇøÖĞĞ´ÈëÊı¾İ
-	* param:@buffer Ğ´ÈëµÄÊı¾İÖ¸Õë
-	* 		 @addLen Ğ´ÈëµÄÊı¾İ³¤¶È
-	* return:-1:Ğ´Èë³¤¶È¹ı´ó
-	*		  >0:Ğ´Èë³¤¶È
+	* function:å‘ç¼“å†²åŒºä¸­å†™å…¥æ•°æ®
+	* param:@buffer å†™å…¥çš„æ•°æ®æŒ‡é’ˆ
+	* 		 @addLen å†™å…¥çš„æ•°æ®é•¿åº¦
+	* return:-1:å†™å…¥é•¿åº¦è¿‡å¤§
+	*		  >0:å†™å…¥é•¿åº¦
 	* */
 	int write(const char* buffer, int addLen);
 
 	/*
-	* function:´Ó»º³åÇøÄÚÈ¡³öÊı¾İ
-	* param   :@buffer:½ÓÊÜ¶ÁÈ¡Êı¾İµÄbuffer
-	*		    @len:½«Òª¶ÁÈ¡µÄÊı¾İµÄ³¤¶È
-	* return  :-1:Ã»ÓĞ³õÊ¼»¯
-	*	 	    >0:Êµ¼Ê¶ÁÈ¡µÄ³¤¶È
+	* function:ä»ç¼“å†²åŒºå†…å–å‡ºæ•°æ®
+	* param   :@buffer:æ¥å—è¯»å–æ•°æ®çš„buffer
+	*		    @len:å°†è¦è¯»å–çš„æ•°æ®çš„é•¿åº¦
+	* return  :-1:æ²¡æœ‰åˆå§‹åŒ–
+	*	 	    >0:å®é™…è¯»å–çš„é•¿åº¦
 	* */
 	int read(char* buffer, int len);
 
 	/*
-	* function:»ñÈ¡ÒÑÊ¹ÓÃ»º³åÇøµÄ³¤¶È
-	* return  :ÒÑÊ¹ÓÃµÄbuffer³¤¶È
+	* function:è·å–å·²ä½¿ç”¨ç¼“å†²åŒºçš„é•¿åº¦
+	* return  :å·²ä½¿ç”¨çš„bufferé•¿åº¦
 	* */
 	int dataSize(void) {
 		return _validLen;
@@ -60,25 +60,25 @@ public:
 		return _capacity - _validLen;
 	}
 	/*
-	* function: ÖÃlen×Ö½ÚÊı¾İÎªÒÑÏû·Ñ
+	* function: ç½®lenå­—èŠ‚æ•°æ®ä¸ºå·²æ¶ˆè´¹
 	*/
 	void consume(int len);
 	/*
-	* function:´Ó»º³åÇøÄÚ½ö¶Á³öÊı¾İ£¬²»¸üĞÂ¶ÁĞ´Ö¸Õë
-	* param   :@buffer:½ÓÊÜ¶ÁÈ¡Êı¾İµÄbuffer
-	*		    @len:½«Òª¶ÁÈ¡µÄÊı¾İµÄ³¤¶È
-	* return  :-1:Ã»ÓĞ³õÊ¼»¯
-	*	 	    >0:Êµ¼Ê¶ÁÈ¡µÄ³¤¶È
+	* function:ä»ç¼“å†²åŒºå†…ä»…è¯»å‡ºæ•°æ®ï¼Œä¸æ›´æ–°è¯»å†™æŒ‡é’ˆ
+	* param   :@buffer:æ¥å—è¯»å–æ•°æ®çš„buffer
+	*		    @len:å°†è¦è¯»å–çš„æ•°æ®çš„é•¿åº¦
+	* return  :-1:æ²¡æœ‰åˆå§‹åŒ–
+	*	 	    >0:å®é™…è¯»å–çš„é•¿åº¦
 	* */
 	int peek(char* buffer, int len);
 
 	char* firstSegment(int* size);
 private:
-	int _validLen = 0;//ÒÑÊ¹ÓÃµÄÊı¾İ³¤¶È
-	char* _pHead = nullptr;//»·ĞÎ´æ´¢ÇøµÄÊ×µØÖ·
-	char* _pTail = nullptr;//»·ĞÎ´æ´¢ÇøµÄ½áÎ²µØÖ·
-	char* _pValid = nullptr;//ÒÑÊ¹ÓÃµÄ»º³åÇøµÄÊ×µØÖ·
-	char* _pValidTail = nullptr;//ÒÑÊ¹ÓÃµÄ»º³åÇøµÄÎ²µØÖ·
+	int _validLen = 0;//å·²ä½¿ç”¨çš„æ•°æ®é•¿åº¦
+	char* _pHead = nullptr;//ç¯å½¢å­˜å‚¨åŒºçš„é¦–åœ°å€
+	char* _pTail = nullptr;//ç¯å½¢å­˜å‚¨åŒºçš„ç»“å°¾åœ°å€
+	char* _pValid = nullptr;//å·²ä½¿ç”¨çš„ç¼“å†²åŒºçš„é¦–åœ°å€
+	char* _pValidTail = nullptr;//å·²ä½¿ç”¨çš„ç¼“å†²åŒºçš„å°¾åœ°å€
 	size_t _capacity = 0;
 };
 

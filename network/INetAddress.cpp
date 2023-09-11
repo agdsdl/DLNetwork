@@ -33,7 +33,7 @@ INetAddress INetAddress::getPeerAddress(SOCKET s) {
 	sockaddr_in6 myaddr;
 	socklen_t len = sizeof(myaddr);
 	if (0 != getpeername(s, (sockaddr*)&myaddr, &len)) {
-		mCritical() << "getpeername error:" << strerror(errno);
+		mCritical() << "getpeername error:" << strerror(errno) << s;
 	}
 	if (len > sizeof(myaddr)) {
 		mCritical() << "to small addr to getpeername";
@@ -54,7 +54,7 @@ INetAddress INetAddress::getSelfAddress(SOCKET s) {
 	sockaddr_in6 myaddr;
 	socklen_t len = sizeof(myaddr);
 	if (0 != getsockname(s, (sockaddr*)&myaddr, &len)) {
-		mCritical() << "getsockname error:" << strerror(errno);
+		mCritical() << "getsockname error:" << strerror(errno) << s;
 	}
 	if (len > sizeof(myaddr)) {
 		mCritical() << "to small addr to getsockname";
