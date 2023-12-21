@@ -71,6 +71,7 @@ public:
 			_thread.join();
 		}
 	};
+	void addPipeEvent();
 	void addEvent(int fd, int type, EventHandleFun&& callback);
 	void modifyEvent(int fd, int type);
 	void removeEvents(int fd);

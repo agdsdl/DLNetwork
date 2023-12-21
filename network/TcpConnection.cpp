@@ -30,6 +30,7 @@
 #include <sstream>
 #include "sockutil.h"
 #include "cppdefer.h"
+#include "StringUtil.h"
 
 using namespace DLNetwork;
 
@@ -64,8 +65,21 @@ TcpConnection::TcpConnection(EventThread *thread, SOCKET sock):_thread(thread),_
 
 TcpConnection::~TcpConnection()
 {
-    mDebug() << "TcpConnection::~TcpConnection()" << this << this->description().c_str();
+    mDebug() << "TcpConnection::~TcpConnection()" << ptr2string(this) << this->description().c_str();
     close();
+#ifdef ENABLE_OPENSSL
+    if (_enableTls) {
+        if (_ssl) {
+            SSL_shutdown(_ssl);
+            SSL_free(_ssl);
+            _ssl = nullptr;
+        }
+        if (_ctx) {
+            SSL_CTX_free(_ctx);
+            _ctx = nullptr;
+        }
+    }
+#endif //ENABLE_OPENSSL
 }
 #ifdef ENABLE_OPENSSL
 void DLNetwork::TcpConnection::enableTls(std::string certFile, std::string keyFile, bool supportH2) {
@@ -164,29 +178,20 @@ void TcpConnection::attach() {
 void TcpConnection::writeInner(const char* buf, size_t size)
 {
     size_t remain = size;
-    //if (_thread->isCurrentThread() && 
-    //    _writeBuf.readableBytes() == 0) {
-    //    int n = ::send(_sock, buf, size, 0);
-    //    if (n >= 0) {
-    //        remain -= n;
-
-    //    }
-    //    else {
-    //        int ecode = get_uv_error();
-    //        if (ecode == UV_EAGAIN) {
-    //            // write to buf.
-    //        }
-    //        else {
-    //            mWarning() << "TcpConnection::write error:" << get_uv_errmsg();
-    //            close();
-    //            return;
-    //        }
-    //    }
-    //}
 
     if (remain) {
-        std::lock_guard<std::mutex> lock(_writeBufMutex);
+#ifdef ENABLE_OPENSSL
+        if (_enableTls) {
+            std::lock_guard<std::mutex> lock(_writeTlsBufMutex);
+            _writeTlsBuf.append(buf, size);
+        }
+        else {
+            std::lock_guard<std::mutex> lock(_writeBufMutex);
+            _writeBuf.append(buf, size);
+        }
+#else
         _writeBuf.append(buf, size);
+#endif // ENABLE_OPENSSL
         _eventType |= EventType::Write;
         _thread->modifyEvent(_sock, _eventType);
     }
@@ -198,36 +203,7 @@ void TcpConnection::write(const char * buf, size_t size)
         mWarning() << "TcpConnection::write when closing" << size;
         return;
     }
-#ifdef ENABLE_OPENSSL
-    if (_enableTls) {
-        do {
-            int r = SSL_write(_ssl, buf, size);
-            if (r <= 0) {
-                int ecode = SSL_get_error(_ssl, r);
-                if (ecode == SSL_ERROR_WANT_READ) {
-                    mWarning() << "SSL_ERROR_WANT_READ when send";
-                    handleSSLRead();
-                }
-                else if (ecode == SSL_ERROR_WANT_WRITE) {
-                    mWarning() << "SSL_ERROR_WANT_WRITE when send";
-                }
-                else {
-                    mWarning() << "SSL_write error:" << ecode;
-                    ERR_print_errors_fp(stdout);
-                }
-            }
-            else {
-                break;
-            }
-        } while (true);
-        handleSSLRead();
-    }
-    else {
-        writeInner(buf, size);
-    }
-#else
     writeInner(buf, size);
-#endif // ENABLE_OPENSSL
 }
 
 void TcpConnection::writeInThread(const char * buf, size_t size)
@@ -242,19 +218,6 @@ void TcpConnection::close()
     }
     _closing = true;
     //mDebug() << "TcpConnection::close()" << this->description().c_str();
-#ifdef ENABLE_OPENSSL
-    if (_enableTls) {
-        if (_ssl) {
-            SSL_shutdown(_ssl);
-            SSL_free(_ssl);
-            _ssl = nullptr;
-        }
-        if (_ctx) {
-            SSL_CTX_free(_ctx);
-            _ctx = nullptr;
-        }
-    }
-#endif //ENABLE_OPENSSL
     _thread->removeEvents(_sock);
     //if (_thread->isCurrentThread()) {
     //    _thread->removeEvents(_sock);
@@ -312,6 +275,7 @@ std::string TcpConnection::description() {
 void TcpConnection::closeAfterWrite() {
     std::unique_lock<std::mutex> lock(_writeBufMutex);
     if (_writeBuf.readableBytes() == 0) {
+        lock.unlock();
         close();
     }
     else {
@@ -341,6 +305,10 @@ void TcpConnection::onEvent(SOCKET sock, int eventType) {
 
 bool TcpConnection::handleRead(SOCKET sock)
 {
+    if (_closing) {
+        return false;
+    }
+
     int ecode = 0;
     int32_t n = _readBuf.readFd(sock, &ecode);
     if (n > 0) {
@@ -405,11 +373,20 @@ bool TcpConnection::handleRead(SOCKET sock)
                     _readTlsBuf.append(buf2, ret);
                 }
             } while (ret > 0);
-
-            return _messageCb(*this, &_readTlsBuf);
+            if (_messageCb) {
+                return _messageCb(*this, &_readTlsBuf);
+            }
+            else {
+                return false;
+            }
         }
         else {
-            return _messageCb(*this, &_readBuf);
+            if (_messageCb) {
+                return _messageCb(*this, &_readBuf);
+            }
+            else {
+                return false;
+            }
         }
 #else
         return _messageCb(*this, &_readBuf);
@@ -428,9 +405,63 @@ bool TcpConnection::handleRead(SOCKET sock)
 
 bool TcpConnection::handleWrite(SOCKET sock)
 {
-    std::unique_lock<std::mutex> lock(_writeBufMutex);
+    if (_closing) {
+        return false;
+    }
 
-    int n = ::send(sock, _writeBuf.peek(), _writeBuf.readableBytes(), 0);
+#ifdef ENABLE_OPENSSL
+    if (_enableTls) {
+        {
+            std::lock_guard<std::mutex> lock(_writeTlsBufMutex);
+            if (_writeTlsBuf.readableBytes() <= 0) {
+                return true;
+            }
+        }
+        do {
+            std::unique_lock<std::mutex> lock(_writeTlsBufMutex);
+            int r = SSL_write(_ssl, _writeTlsBuf.peek(), _writeTlsBuf.readableBytes());
+            if (r <= 0) {
+                int ecode = SSL_get_error(_ssl, r);
+                if (ecode == SSL_ERROR_WANT_READ) {
+                    mWarning() << "SSL_ERROR_WANT_READ when send";
+                    lock.unlock();
+                    handleSSLRead();
+                }
+                else if (ecode == SSL_ERROR_WANT_WRITE) {
+                    mWarning() << "SSL_ERROR_WANT_WRITE when send";
+                }
+                else if (ecode == SSL_ERROR_ZERO_RETURN) {
+                    mWarning() << "ssl peer closed when send";
+                    break;
+                }
+                else {
+                    mWarning() << "SSL_write error:" << ecode;
+                    ERR_print_errors_fp(stdout);
+                    ERR_print_errors_fp(stderr);
+                    break;
+                }
+            }
+            else {
+                _writeTlsBuf.retrieve(r);
+                if (_writeTlsBuf.readableBytes() == 0) {
+                    break;
+                }
+            }
+        } while (true);
+        return handleSSLRead();
+    }
+    else {
+        return realSend();
+    }
+#else
+    return realSend();
+#endif
+}
+
+bool DLNetwork::TcpConnection::realSend()
+{
+    std::unique_lock<std::mutex> lock(_writeBufMutex);
+    int n = ::send(_sock, _writeBuf.peek(), _writeBuf.readableBytes(), 0);
     if (n >= 0) {
         _writeBuf.retrieve(n);
         if (_writeBuf.readableBytes() == 0) {
@@ -472,19 +503,22 @@ void TcpConnection::handleError(SOCKET sock)
 }
 
 #ifdef ENABLE_OPENSSL
-void TcpConnection::handleSSLRead()
+bool TcpConnection::handleSSLRead()
 {
     int read = 0;
     do {
         char buf[4096];
         read = BIO_read(_wbio, buf, sizeof(buf));
         if (read > 0) {
-            writeInner(buf, read);
+            std::lock_guard<std::mutex> lock(_writeBufMutex);
+            _writeBuf.append(buf, read);
+            //writeInner(buf, read);
         }
         else {
             //TODO: BIO_should_retry
         }
     } while (read > 0);
+    return realSend();
     //do {
     //    size_t pendingW = BIO_ctrl_pending(_wbio);
     //    size_t pendingR = BIO_ctrl_pending(_rbio);

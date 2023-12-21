@@ -32,9 +32,10 @@
 //#include "MyHttp2Session.h"
 
 namespace DLNetwork {
-    class MyHttp2Session;
+class MyHttp2Session;
 class MyHttp2Stream : public std::enable_shared_from_this<MyHttp2Stream> {
 public:
+    friend class MyHttp2Session;
     MyHttp2Stream(uint32_t streamId, DLNetwork::MyHttp2Session* session, uint32_t initWindowSize, uint32_t maxFrameSize);
     ~MyHttp2Stream();
     typedef std::function<void(HTTP::Request& request, std::shared_ptr<MyHttp2Stream> sess)> UrlHandler;
@@ -44,8 +45,9 @@ public:
         _handler = handler;
     }
 
-    void addClosedHandler(ClosedHandler&& handler) {
-        _closeHandlers.push_back(std::move(handler));
+    void setClosedHandler(ClosedHandler&& handler) {
+        _closedHandler = handler;
+        //_closeHandlers.push_back(std::move(handler));
     }
 
     void response(std::string content);
@@ -80,9 +82,9 @@ private:
     int sendData(const uint8_t* data, size_t size, bool endStream);
     bool _closed;
     UrlHandler _handler;
-    //ClosedHandler _closedHandler;
+    ClosedHandler _closedHandler;
     uint32_t _initWindowSize;
     uint32_t _maxFrameSize;
-    std::vector<ClosedHandler> _closeHandlers;
+    //std::vector<ClosedHandler> _closeHandlers;
 };
 } //DLNetwork

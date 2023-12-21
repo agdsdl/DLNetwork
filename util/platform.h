@@ -29,6 +29,8 @@
 #include <winsock2.h> 
 #include <ws2tcpip.h>
 #include <Iphlpapi.h>
+#include <direct.h>
+#include <io.h>
 #pragma comment (lib, "Ws2_32.lib")
 #pragma comment(lib,"Iphlpapi.lib")
 #define ioctl ioctlsocket
@@ -55,6 +57,9 @@
 #endif
 #include <sys/uio.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #ifndef SOCKET
 #define SOCKET int

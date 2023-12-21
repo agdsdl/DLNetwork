@@ -30,6 +30,8 @@ std::string BinToHex(const std::string& strBin, bool bIsUpper);
 std::string BinToHex(const uint8_t* buf, size_t len, bool bIsUpper);
 std::string HexToBin(const std::string& strHex);
 
+
+std::string ptr2string(void* p);
 } //DLNetwork
 #define strstartswith(p, prefix)	(strncmp(p, prefix, strlen(prefix))? 0 : 1)
 #define strendswith(p, suffix)		(strncmp(p+strlen(p)-strlen(suffix), suffix, strlen(suffix))? 0 : 1)

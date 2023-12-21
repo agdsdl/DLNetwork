@@ -62,7 +62,11 @@ EventThread::EventThread(bool fromCurrentThread) :_threadCancel(false) {
 		_selfThreadid = std::this_thread::get_id();
 		setThreadName(buf);
 	}
+	addPipeEvent();
+}
 
+void DLNetwork::EventThread::addPipeEvent()
+{
 	SockUtil::setNoBlocked(_pipe.readFD());
 	SockUtil::setNoBlocked(_pipe.writeFD());
 	//addEvent(_pipe.readFD(), EventType::Read, [this](int fd, int event) {onPipeEvent(); });
@@ -170,11 +174,20 @@ void EventThread::onPipeEvent() {
 	char buf[1024];
 	int err = 0;
 	do {
-		if (_pipe.read(buf, sizeof(buf)) > 0) {
+		int ret = _pipe.read(buf, sizeof(buf));
+		if (ret > 0) {
 			continue;
 		}
 		err = get_uv_error(true);
-	} while (err != UV_EAGAIN);
+		if (ret == 0 || err != UV_EAGAIN) {
+            //对端关闭
+            mWarning() << "EventThread::onPipeEvent pipe closed";
+			removeEvents(_pipe.readFD());
+			_pipe.reOpen();
+			addPipeEvent();
+		}
+		break;
+	} while (true);
 
 	std::list<TASK_FUN> tmp;
 	std::unique_lock<std::mutex> lk(_taskMutex);

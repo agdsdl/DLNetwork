@@ -37,11 +37,12 @@ public:
 	int writeFD() const {
 		return _pipe_fd[1];
 	}
+	void reOpen();
 private:
 	int _pipe_fd[2] = { -1,-1 };
 	void clearFD();
 #if defined(_WIN32)
-	int _listenerFd = -1;
+	//int _listenerFd = -1;
 #endif // defined(_WIN32)
 
 };

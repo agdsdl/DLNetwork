@@ -103,6 +103,7 @@ protected:
     void onEvent(SOCKET sock, int eventType);
     bool handleRead(SOCKET sock);
     bool handleWrite(SOCKET sock);
+    bool realSend();
     void handleHangup(SOCKET sock);
     void handleError(SOCKET sock);
     void writeInThread(const char* buf, size_t size);
@@ -116,13 +117,14 @@ protected:
     WritedCallback _writedcb;
     bool _closing;
     std::mutex _writeBufMutex;
+    std::mutex _writeTlsBufMutex;
     int _eventType;
     INetAddress _peerAddr;
     INetAddress _selfAddr;
     bool _closeAfterWrite = false;
 
 #ifdef ENABLE_OPENSSL
-    void handleSSLRead();
+    bool handleSSLRead();
 
     SSL_CTX* _ctx = nullptr;
     SSL* _ssl = nullptr;
@@ -131,6 +133,7 @@ protected:
     bool _enableTls = false;
     std::string _certFile;
     std::string _keyFile;
+    DLNetwork::Buffer _writeTlsBuf;
     DLNetwork::Buffer _readTlsBuf;
 #endif // ENABLE_OPENSSL
 };

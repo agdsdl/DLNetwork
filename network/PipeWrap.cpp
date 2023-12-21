@@ -44,36 +44,39 @@ using namespace DLNetwork;
 	}
 
 PipeWrap::PipeWrap(){
+	reOpen();
+}
 
+void PipeWrap::reOpen() {
+	clearFD();
 #if defined(_WIN32)
-	_listenerFd = SockUtil::listen(0, "127.0.0.1");
-	checkFD(_listenerFd);
-	SockUtil::setNoBlocked(_listenerFd,false);
-	auto localPort = SockUtil::get_local_port(_listenerFd);
-	_pipe_fd[1] = SockUtil::connect("127.0.0.1", localPort,false);
+	auto listener_fd = SockUtil::listen(0, "127.0.0.1");
+	checkFD(listener_fd);
+	SockUtil::setNoBlocked(listener_fd, false);
+	auto localPort = SockUtil::get_local_port(listener_fd);
+	_pipe_fd[1] = SockUtil::connect("127.0.0.1", localPort, false);
 	checkFD(_pipe_fd[1]);
-	_pipe_fd[0] = accept(_listenerFd, nullptr, nullptr);
+	_pipe_fd[0] = (int)accept(listener_fd, nullptr, nullptr);
 	checkFD(_pipe_fd[0]);
 	SockUtil::setNoDelay(_pipe_fd[0]);
-    SockUtil::setNoDelay(_pipe_fd[1]);
+	SockUtil::setNoDelay(_pipe_fd[1]);
+	closeFD(listener_fd);
 #else
 	if (pipe(_pipe_fd) == -1) {
 		mCritical() << "create posix pipe failed:" << get_uv_errmsg();
-
 		throw runtime_error("create posix pipe failed");
 	}
-#endif // defined(_WIN32)	
-	SockUtil::setNoBlocked(_pipe_fd[0],true);
-	SockUtil::setNoBlocked(_pipe_fd[1],false);
+#endif // defined(_WIN32)
+	SockUtil::setNoBlocked(_pipe_fd[0], true);
+	SockUtil::setNoBlocked(_pipe_fd[1], false);
 }
-
 void PipeWrap::clearFD() {
 	closeFD(_pipe_fd[0]);
 	closeFD(_pipe_fd[1]);
 
-#if defined(_WIN32)
-	closeFD(_listenerFd);
-#endif // defined(_WIN32)
+//#if defined(_WIN32)
+//	closeFD(_listenerFd);
+//#endif // defined(_WIN32)
 
 }
 PipeWrap::~PipeWrap(){

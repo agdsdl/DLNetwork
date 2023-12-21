@@ -84,21 +84,33 @@ private:
         }
 #endif // ENABLE_OPENSSL
         session->setUrlHandler(std::bind(&_MyHttpServer::urlHanlder, this, std::placeholders::_1, std::placeholders::_2));
-        session->addClosedHandler(std::bind(&_MyHttpServer::closedHandler, this, std::placeholders::_1));
+        //session->addClosedHandler(std::bind(&_MyHttpServer::closedHandler, this, std::placeholders::_1));
+        pConn->setConnectCallback(std::bind(&_MyHttpServer::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
         _conn_session[pConn] = session;
         session->takeoverConn();
     }
-    //void onConnectionChange(TcpConnection& conn, ConnectEvent e);
+    void onConnectionChange(TcpConnection& conn, ConnectEvent e) {
+        if (e == ConnectEvent::Closed) {
+            _conn_session[&conn]->onConnectionChange(conn, e);
+            _conn_session.erase(&conn);
+        }
+    }
     //bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
     //void onWriteDone(TcpConnection& conn);
 
-    void closedHandler(std::shared_ptr<SESSION> sess) {
-        // don't self delete
-        _thread->dispatch([this, sess]() {
-            _conn_session.erase(&sess->connection());
-            });
-    }
+    //void closedHandler(std::shared_ptr<SESSION> sess) {
+    //    // don't self delete
+    //    _thread->dispatch([this, sess]() {
+    //        _conn_session.erase(&sess->connection());
+    //        });
+    //}
     void urlHanlder(HTTP::Request& request, std::shared_ptr<CallbackSession> sess) {
+        if (request.method == DLNetwork::HTTP::Method::HTTP_OPTIONS) {
+            sess->response("");
+            //sess->stop();
+            return;
+        }
+
         if (_handler) {
             _handler(request, sess);
         }

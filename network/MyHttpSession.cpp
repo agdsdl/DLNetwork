@@ -36,7 +36,7 @@ DLNetwork::MyHttpSession::MyHttpSession(std::unique_ptr<TcpConnection>&& conn) :
 
 DLNetwork::MyHttpSession::~MyHttpSession() {
     stop();
-    mInfo() << "~MyHttpSession" << this;
+    mInfo() << "~MyHttpSession" << ptr2string(this);
 }
 
 void DLNetwork::MyHttpSession::stop()
@@ -182,7 +182,7 @@ void MyHttpSession::endFile() {
 }
 
 void MyHttpSession::takeoverConn() {
-    _conn->setConnectCallback(std::bind(&MyHttpSession::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
+    //_conn->setConnectCallback(std::bind(&MyHttpSession::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnMessage(std::bind(&MyHttpSession::onMessage, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnWriteDone(std::bind(&MyHttpSession::onWriteDone, this, std::placeholders::_1));
     _conn->attach();
@@ -191,14 +191,15 @@ void MyHttpSession::takeoverConn() {
 void MyHttpSession::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
     if (e == ConnectEvent::Closed) {
         _closed = true;
-        for (auto& onclose: _closeHandlers) {
-            stop();
-            onclose(shared_from_this());
-        }
-        _closeHandlers.clear();
-        //if (_closedHandler) {
-        //    _closedHandler(shared_from_this());
+        //for (auto& onclose: _closeHandlers) {
+        //    stop();
+        //    onclose(shared_from_this());
         //}
+        //_closeHandlers.clear();
+        if (_closedHandler) {
+            _closedHandler(shared_from_this());
+        }
+        _closedHandler = nullptr;
     }
 }
 

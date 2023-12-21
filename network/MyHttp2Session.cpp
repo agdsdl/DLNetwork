@@ -37,7 +37,7 @@ MyHttp2Session::MyHttp2Session(std::unique_ptr<TcpConnection>&& conn) :_conn(std
 
 MyHttp2Session::~MyHttp2Session() {
     stop();
-    mInfo() << "~MyHttp2Session" << this;
+    mInfo() << "~MyHttp2Session" << ptr2string(this);
 }
 
 void MyHttp2Session::stop()
@@ -54,7 +54,7 @@ void MyHttp2Session::stop()
 
 
 void MyHttp2Session::takeoverConn() {
-    _conn->setConnectCallback(std::bind(&MyHttp2Session::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
+    //_conn->setConnectCallback(std::bind(&MyHttp2Session::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnMessage(std::bind(&MyHttp2Session::onMessage, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnWriteDone(std::bind(&MyHttp2Session::onWriteDone, this, std::placeholders::_1));
     _conn->attach();
@@ -63,13 +63,14 @@ void MyHttp2Session::takeoverConn() {
 void MyHttp2Session::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
     if (e == ConnectEvent::Closed) {
         _closed = true;
-        for (auto& onclose: _closeHandlers) {
-            stop();
-            onclose(shared_from_this());
-        }
-        //if (_closedHandler) {
-        //    _closedHandler(shared_from_this());
+        //for (auto& onclose: _closeHandlers) {
+        //    stop();
+        //    onclose(shared_from_this());
         //}
+        if (_closedHandler) {
+            _closedHandler(shared_from_this());
+        }
+        _closedHandler = nullptr;
         for (auto& s : _streams) {
             s.second->stop();
         }
@@ -279,7 +280,7 @@ std::shared_ptr<MyHttp2Stream> MyHttp2Session::getOrGenStream(uint32_t streamId)
         stream = std::make_shared<MyHttp2Stream>(streamId, this, _initialWindowSize, _maxFrameSize);
         _streams[streamId] = stream;
         stream->setUrlHandler(_handler);
-        stream->addClosedHandler(std::bind(&MyHttp2Session::onStreamEnd, this, std::placeholders::_1));
+        //stream->addClosedHandler(std::bind(&MyHttp2Session::onStreamEnd, this, std::placeholders::_1));
     }
 
     return stream;
@@ -292,6 +293,7 @@ void MyHttp2Session::closeStream(std::shared_ptr<MyHttp2Stream> stream)
     if (_streams.size() == 0) {
         // idle to close.
     }
+    stream->stop();
 }
 
 void MyHttp2Session::onStreamEnd(std::shared_ptr<MyHttp2Stream> stream)
@@ -310,6 +312,9 @@ void MyHttp2Session::onWriteDone(TcpConnection& conn) {
 
 void MyHttp2Session::send(const char* buf, size_t size)
 {
+    if (_closed) {
+        return;
+    }
     _conn->write(buf, size);
 }
 

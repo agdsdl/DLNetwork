@@ -1,5 +1,6 @@
 #include "StringUtil.h"
 #include <string.h>
+#include "NetEndian.h"
 
 using namespace DLNetwork;
 
@@ -202,4 +203,46 @@ std::string DLNetwork::HexToBin(const std::string& strHex)
     }
 
     return strBin;
+}
+
+std::string DLNetwork::ptr2string(void* p) {
+    if (!p) {
+        return "0x0";
+    }
+
+#if !defined(BIG_ENDIAN)
+    int n = 8;
+    uint8_t* ptr = (uint8_t*)&p;
+    while (ptr[--n] == 0);
+
+    char tmp[2+16];
+    int k = 2;
+    for (int i = n; i >= 0; i--) {
+        tmp[k++] = (ptr[i] >> 4) >= 10 ? (ptr[i] >> 4)+'a'-10 : (ptr[i] >> 4) + '0';
+        tmp[k++] = (ptr[i]&0xF) >= 10 ? (ptr[i] & 0xF) +'a'-10 : (ptr[i] & 0xF) + '0';
+    }
+    int start = 0;
+    if (tmp[2] == '0') {
+        start = 1;
+    }
+    tmp[start] = '0';
+    tmp[start + 1] = 'x';
+    return std::string(tmp + start, 2 + (n+1) * 2 - start);
+#else
+    constexpr int n = sizeof(void*);
+#if (n == 8)
+    p = (void*)DLNetwork::hostToNetwork64((uint64_t)p);
+#elif (n == 4)
+    p = (void*)DLNetwork::hostToNetwork32((uint32_t)p);
+#elif (n == 2)
+    p = (void*)DLNetwork::hostToNetwork16((uint16_t)p);
+#endif // (sizeof(void*) == 4)
+
+    std::string str = DLNetwork::BinToHex((const uint8_t*)&p, sizeof(p), false);
+    std::string::size_type pos = str.find_first_not_of('0');
+    if (pos != std::string::npos) {
+        str = str.substr(pos);
+    }
+    return std::string("0x") + str;
+#endif
 }

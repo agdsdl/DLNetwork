@@ -31,21 +31,31 @@
 
 using namespace DLNetwork;
 
-DLNetwork::MyHttp2Stream::MyHttp2Stream(uint32_t streamId, MyHttp2Session* session, uint32_t initWindowSize, uint32_t maxFrameSize) 
-    : _streamId(streamId), _session(session), _initWindowSize(initWindowSize), _maxFrameSize(maxFrameSize) {
+MyHttp2Stream::MyHttp2Stream(uint32_t streamId, MyHttp2Session* session, uint32_t initWindowSize, uint32_t maxFrameSize) 
+    : _streamId(streamId), _session(session), _initWindowSize(initWindowSize), _maxFrameSize(maxFrameSize), _closed(false) {
+    mInfo() << "MyHttp2Stream create id" << _streamId << ptr2string(this);
 }
 
-DLNetwork::MyHttp2Stream::~MyHttp2Stream() {
-    stop();
-    mInfo() << "~MyHttp2Stream" << this;
+MyHttp2Stream::~MyHttp2Stream() {
+    //stop();
+    mInfo() << "~MyHttp2Stream id" << _streamId << ptr2string(this);
 }
 
-void DLNetwork::MyHttp2Stream::stop()
+void MyHttp2Stream::stop()
 {
-    for (auto& h : _closeHandlers) {
-        h(shared_from_this());
+    if (!_closed) {
+        _closed = true;
+        if (_closedHandler) {
+            _closedHandler(shared_from_this());
+        }
+
+        _session->onStreamEnd(shared_from_this());
     }
-    _closeHandlers.clear();
+
+    //for (auto& h : _closeHandlers) {
+    //    h(shared_from_this());
+    //}
+    //_closeHandlers.clear();
 }
 
 void MyHttp2Stream::response(std::string content) {
@@ -58,6 +68,8 @@ void MyHttp2Stream::response(int code, std::string content) {
     headers.emplace_back(H2HeaderStatus, std::to_string(code));
     headers.emplace_back("content-type", "text/html; charset=utf-8");
     headers.emplace_back("content-length", std::to_string(content.length()));
+    headers.emplace_back("access-control-allow-origin", "*");
+    headers.emplace_back("access-control-max-age", "7200");
     sendHeaders(headers, false);
     sendData((const uint8_t*)content.c_str(), content.size(), true);
 }
@@ -125,10 +137,14 @@ void MyHttp2Stream::beginFile(std::string fname, std::string contentType) {
         headers.emplace_back("content-disposition", std::string("attachment; filename=\"") + fname + "\"");
     }
     headers.emplace_back("access-control-allow-origin", "*");
+    headers.emplace_back("access-control-max-age", "7200");
     sendHeaders(headers, false);
 }
 
 void MyHttp2Stream::writeFile(std::string content) {
+    if (_closed) {
+        return;
+    }
     sendData((const uint8_t*)content.c_str(), content.size(), false);
 }
 
@@ -137,14 +153,14 @@ void MyHttp2Stream::endFile() {
     sendData((const uint8_t*)content.c_str(), content.size(), true);
 }
 
-EventThread* DLNetwork::MyHttp2Stream::thread() { return _session->thread(); }
+EventThread* MyHttp2Stream::thread() { return _session->thread(); }
 
-std::string DLNetwork::MyHttp2Stream::description() {
+std::string MyHttp2Stream::description() {
     return _session->description();
 }
 
 
-void DLNetwork::MyHttp2Stream::onHeadersFrame(HeaderVector& headers, bool isEnd)
+void MyHttp2Stream::onHeadersFrame(HeaderVector& headers, bool isEnd)
 {
     HTTP::Request request;
     //int contentLength = 0;
@@ -256,7 +272,7 @@ for (auto& header : headers) {
 */
 }
 
-void DLNetwork::MyHttp2Stream::onDataFrame(const uint8_t* data, size_t size, bool isEnd)
+void MyHttp2Stream::onDataFrame(const uint8_t* data, size_t size, bool isEnd)
 {
     _request.body.append((const char*)data, size);
     if (isEnd) {
@@ -266,15 +282,16 @@ void DLNetwork::MyHttp2Stream::onDataFrame(const uint8_t* data, size_t size, boo
     }
 }
 
-void DLNetwork::MyHttp2Stream::onRstStreamFrame(uint32_t reason)
+void MyHttp2Stream::onRstStreamFrame(uint32_t reason)
 {
+    mInfo() << "onRstStreamFrame" << _streamId << "reason:" << reason;
     stop();
     //for (auto& onclose : _closeHandlers) {
     //    onclose(shared_from_this());
     //}
 }
 
-int DLNetwork::MyHttp2Stream::sendHeaders(const HeaderVector& headers, bool endStream)
+int MyHttp2Stream::sendHeaders(const HeaderVector& headers, bool endStream)
 {
     HeadersFrame frame;
     frame.setStreamId(_streamId);
@@ -293,7 +310,7 @@ int DLNetwork::MyHttp2Stream::sendHeaders(const HeaderVector& headers, bool endS
     return ret;
 }
 
-int DLNetwork::MyHttp2Stream::sendData(const uint8_t* data, size_t size, bool endStream)
+int MyHttp2Stream::sendData(const uint8_t* data, size_t size, bool endStream)
 {
     //TODO: flow control
     size_t remain = size;
@@ -314,6 +331,7 @@ int DLNetwork::MyHttp2Stream::sendData(const uint8_t* data, size_t size, bool en
         data += n;
     } while (remain > 0);
     if (endStream) {
+        mInfo() << "MyHttp2Stream::sendData and end stream." << _streamId;
         stop();
     }
     return ret;

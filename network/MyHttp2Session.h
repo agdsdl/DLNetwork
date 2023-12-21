@@ -33,8 +33,12 @@
 #include "MyHttp2Stream.h"
 
 namespace DLNetwork {
+template<typename T>
+class _MyHttpServer;
 class MyHttp2Session : public std::enable_shared_from_this<MyHttp2Session> {
 public:
+    friend class _MyHttpServer<MyHttp2Session>;
+    friend class MyHttp2Stream;
     typedef DLNetwork::MyHttp2Stream CallbackSession;
     enum {supportH2 = true};
     typedef std::function<void(HTTP::Request& request, std::shared_ptr<CallbackSession> sess)> UrlHandler;
@@ -42,15 +46,12 @@ public:
     MyHttp2Session(std::unique_ptr<TcpConnection>&& conn);
     ~MyHttp2Session();
     void stop();
-    void setUrlHandler(UrlHandler handler) {
-        _handler = handler;
+    void setClosedHandler(ClosedHandler handler) {
+        _closedHandler = handler;
     }
-    //void setClosedHandler(ClosedHandler handler) {
-    //    _closedHandler = handler;
+    //void addClosedHandler(ClosedHandler&& handler) {
+    //    _closeHandlers.push_back(std::move(handler));
     //}
-    void addClosedHandler(ClosedHandler&& handler) {
-        _closeHandlers.push_back(std::move(handler));
-    }
     //void clearClosedHandler() {
     //    _closeHandlers.clear();
     //}
@@ -67,6 +68,9 @@ public:
     std::string uri;
     std::map<std::string, std::string> urlParams;
 private:
+    void setUrlHandler(UrlHandler handler) {
+        _handler = handler;
+    }
     void onConnectionChange(TcpConnection& conn, ConnectEvent e);
     bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
     void onWriteDone(TcpConnection& conn);
@@ -103,8 +107,8 @@ private:
     bool _closed;
     Timer* _closeTimer = nullptr;
     UrlHandler _handler;
-    //ClosedHandler _closedHandler;
-    std::vector<ClosedHandler> _closeHandlers;
+    ClosedHandler _closedHandler;
+    //std::vector<ClosedHandler> _closeHandlers;
 
     std::unordered_map<uint32_t, std::shared_ptr<MyHttp2Stream>> _streams;
     Buffer _headersBuf;

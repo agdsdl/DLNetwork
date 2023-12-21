@@ -25,6 +25,8 @@
 
 using namespace DLNetwork;
 
+MyLogLevel DLNetwork::g_myLevel = MyLogLevel::Info;
+MyLog::OutputFunc MyLog::_output = nullptr;
 //void MyLog::output(std::string s)
 //{
 //	std::cout << s;

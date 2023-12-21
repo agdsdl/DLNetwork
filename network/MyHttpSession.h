@@ -31,8 +31,12 @@
 
 
 namespace DLNetwork {
+template<typename T>
+class _MyHttpServer;
 class MyHttpSession : public std::enable_shared_from_this<MyHttpSession> {
 public:
+    friend class _MyHttpServer<MyHttpSession>;
+
     typedef MyHttpSession CallbackSession;
     enum { supportH2 = false };
 
@@ -41,20 +45,15 @@ public:
     MyHttpSession(std::unique_ptr<TcpConnection>&& conn);
     ~MyHttpSession();
     void stop();
-    void setUrlHandler(UrlHandler handler) {
-        _handler = handler;
+    void setClosedHandler(ClosedHandler handler) {
+        _closedHandler = handler;
     }
-    //void setClosedHandler(ClosedHandler handler) {
-    //    _closedHandler = handler;
+    //void addClosedHandler(ClosedHandler&& handler) {
+    //    _closeHandlers.push_back(std::move(handler));
     //}
-    void addClosedHandler(ClosedHandler&& handler) {
-        _closeHandlers.push_back(std::move(handler));
-    }
     //void clearClosedHandler() {
     //    _closeHandlers.clear();
     //}
-
-    std::string makeupResponse(int code, const std::string& content);
 
     void response(std::string content);
     void response(int code, std::string content);
@@ -77,6 +76,10 @@ public:
     std::string uri;
     std::map<std::string, std::string> urlParams;
 private:
+    std::string makeupResponse(int code, const std::string& content);
+    void setUrlHandler(UrlHandler handler) {
+        _handler = handler;
+    }
     void onConnectionChange(TcpConnection& conn, ConnectEvent e);
     bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
     void onWriteDone(TcpConnection& conn);
@@ -86,8 +89,8 @@ private:
     std::unique_ptr<TcpConnection> _conn;
     bool _closed;
     UrlHandler _handler;
-    //ClosedHandler _closedHandler;
-    std::vector<ClosedHandler> _closeHandlers;
+    ClosedHandler _closedHandler;
+    //std::vector<ClosedHandler> _closeHandlers;
     Timer* _closeTimer = nullptr;
 };
 } //DLNetwork
