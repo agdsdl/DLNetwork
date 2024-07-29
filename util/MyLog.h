@@ -108,7 +108,17 @@ public:
 		if (_level < (int)getMyLogLevel()) {
 			return * this;
 		}
-		_ss << t << ' ';
+		if constexpr(std::is_same<std::remove_cv_t<std::remove_reference_t<T> >, char*>::value) {
+			if (t == nullptr) {
+				_ss << "<nullptr> ";
+			}
+			else {
+				_ss << t << ' ';
+			}
+		}
+		else {
+			_ss << t << ' ';
+		}
 		return *this;
 	}
 private:

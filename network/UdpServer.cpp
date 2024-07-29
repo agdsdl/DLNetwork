@@ -15,10 +15,10 @@ UdpServer::~UdpServer()
     stop();
 }
 
-bool UdpServer::start(EventThread* loop, sockaddr_in listenAddr, std::string name, bool reusePort)
+bool UdpServer::start(EventThread* loop, INetAddress listenAddr, std::string name, bool reusePort)
 {
     _thread = loop;
-    _listenAddr = listenAddr;
+    _listenAddr = std::move(listenAddr);
     _name = std::move(name);
     _reusePort = reusePort;
 
@@ -29,7 +29,7 @@ bool UdpServer::start(EventThread* loop, sockaddr_in listenAddr, std::string nam
     }
     SockUtil::setNoBlocked(_listenSock, true);
     SockUtil::setReuseable(_listenSock, _reusePort);
-    int ret = bind(_listenSock, (sockaddr*)&listenAddr, sizeof(listenAddr));
+    int ret = bind(_listenSock, (sockaddr*)&_listenAddr.addr4(), sizeof(_listenAddr.addr4()));
     if (ret != 0) {
         mCritical() << "UdpServer bind error" << _listenSock << get_uv_errmsg();
         return false;
@@ -65,10 +65,10 @@ void UdpServer::onEvent(SOCKET sock, int eventType) {
 
         int n;
         socklen_t len = sizeof(cliaddr);  //len is value/result 
-
         n = recvfrom(sock, (char*)buffer, 65536, 0, (struct sockaddr*)&cliaddr, &len);
         if (n > 0) {
-            _dataCb(sock, cliaddr, buffer, n);
+            INetAddress addr(cliaddr);
+            _dataCb(sock, addr, buffer, n);
         }
         else if (n == 0) {
             // eof

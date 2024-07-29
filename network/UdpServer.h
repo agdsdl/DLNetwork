@@ -14,10 +14,10 @@ class UdpServer
 public:
     UdpServer();
     ~UdpServer();
-    typedef std::function<void(SOCKET sock, sockaddr_in clientAddr, char* data, int size)> RecvDataCallback;
+    typedef std::function<void(SOCKET sock, INetAddress& clientAddr, char* data, int size)> RecvDataCallback;
 
 
-    bool start(EventThread* loop, sockaddr_in listenAddr, std::string name, bool reusePort = true);
+    bool start(EventThread* loop, INetAddress listenAddr, std::string name, bool reusePort = true);
     void stop();
 
     void setRecvDataCallback(const RecvDataCallback& cb) {
@@ -30,7 +30,7 @@ private:
     void onEvent(SOCKET sock, int eventType);
 
     RecvDataCallback _dataCb;
-    sockaddr_in _listenAddr;
+    INetAddress _listenAddr;
     SOCKET _listenSock;
     EventThread* _thread;
     std::string _name;

@@ -34,7 +34,7 @@ public:
 	static SOCKET create(ProtoType proto, IPType ipType=IPType::IPV4);
 	static int sendto(SOCKET sock, INetAddress& addr, const char* data, size_t size)
 	{
-		mDebug() << "sendto" << addr.description() << hexmem(data, size);
+		//mDebug() << "sendto" << addr.description() << hexmem(data, size);
 		sockaddr_in addr4 = addr.addr4();
 		int ret = ::sendto(sock, (const char*)data, size, 0, (sockaddr*)&addr4, sizeof(addr4));
 		return ret;
