@@ -104,6 +104,15 @@ void StringUtil::trim(std::string& str, char trimmed/* = ' '*/)
     trimRight(str, trimmed);
 }
 
+bool StringUtil::isEndWith(std::string const& fullString, std::string const& ending) {
+    if (fullString.length() >= ending.length()) {
+        return (0 == fullString.compare(fullString.length() - ending.length(), ending.length(), ending));
+    }
+    else {
+        return false;
+    }
+}
+
 std::string DLNetwork::hexmem(const void* buf, size_t len) {
     std::string ret;
     char tmp[8];

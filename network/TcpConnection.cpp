@@ -130,8 +130,6 @@ void DLNetwork::TcpConnection::enableTls(std::string certFile, std::string keyFi
 #endif // ENABLE_OPENSSL
 
 std::unique_ptr<TcpConnection> TcpConnection::connectTo(EventThread* thread, INetAddress addr) {
-    assert(thread->isCurrentThread());
-
     if (!addr.isIP4() && !addr.isIP6()) {
         mCritical() << "TcpConnection::connectTo badAddr!" << addr.description().c_str();
         return nullptr;
@@ -190,6 +188,7 @@ void TcpConnection::writeInner(const char* buf, size_t size)
             _writeBuf.append(buf, size);
         }
 #else
+        std::lock_guard<std::mutex> lock(_writeBufMutex);
         _writeBuf.append(buf, size);
 #endif // ENABLE_OPENSSL
         _eventType |= EventType::Write;

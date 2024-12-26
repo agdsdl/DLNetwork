@@ -25,18 +25,22 @@
 #include <urlcodec.h>
 #include <string.h>
 #include <memory>
+#include "StringUtil.h"
 
 using namespace DLNetwork;
 using namespace HTTP;
 
-std::vector<std::string> HTTP::split(const char* buf, size_t bufLen, const std::string& delim) noexcept {
+std::vector<std::string> HTTP::split(const char* buf, size_t bufLen, const std::string& delim, bool *found) noexcept {
     std::vector<std::string> tokens = std::vector<std::string>();
     std::string strCopy(buf, bufLen);
 
     std::size_t pos = 0;
     std::string token;
-
+    if(found) *found = false;
     while ((pos = strCopy.find(delim)) != std::string::npos) {
+        if (found && !*found) {
+            *found = true;
+        }
         token = strCopy.substr(0, pos);
         strCopy.erase(0, pos + delim.length());
 
@@ -48,6 +52,10 @@ std::vector<std::string> HTTP::split(const char* buf, size_t bufLen, const std::
     }
 
     return tokens;
+}
+
+std::vector<std::string> HTTP::split(const char* buf, size_t bufLen, const std::string& delim) noexcept {
+    return split(buf, bufLen, delim, nullptr);
 }
 
 std::vector<std::string> HTTP::split(const std::string& str, const std::string& delim) noexcept {
@@ -271,24 +279,31 @@ std::string HTTP::Response::serialize() const noexcept {
     response += LINE_END;
 
     if (body.length()) {
-        response += LINE_END;
+        //response += LINE_END;
         response += body;
     }
     return response;
 }
 
-void HTTP::Response::deserialize(const char* buf, size_t bufLen) noexcept {
-    std::vector<std::string> segments = split(buf, bufLen, std::string(LINE_END) + std::string(LINE_END));
+Response::ErrorCode HTTP::Response::deserialize(const char* buf, size_t bufLen) noexcept {
+    bool found = false;
+    std::vector<std::string> segments = split(buf, bufLen, std::string(LINE_END) + std::string(LINE_END), &found);
+    if (!found) {
+        return Response::ErrorCode::ResponseInsufficent;
+    }
 
     std::string headerSegment = segments[0];
     segments.erase(segments.begin());
-    body = concat(segments);
 
     std::vector<std::string> headerLines = split(headerSegment, std::string(LINE_END));
     const std::string& responseCodeLine = headerLines[0];
     std::vector<std::string> responseCodeSegments = split(responseCodeLine, " ");
+    if (responseCodeSegments.size() != 3) {
+        return Response::ErrorCode::ResponseFirstLineError;
+    }
     version = version_from_string(responseCodeSegments[0]);
     responseCode = std::stoi(responseCodeSegments[1]);
+    responseReason = responseCodeSegments[2];
 
     headerLines.erase(headerLines.begin());
     for (const std::string& line : headerLines) {
@@ -297,4 +312,35 @@ void HTTP::Response::deserialize(const char* buf, size_t bufLen) noexcept {
             headers.insert_or_assign(std::move(header.key), std::move(header.value));
         }
     }
+
+    if (headers.find("Content-Length") != headers.end()) {
+        body = concat(segments);
+        int len = std::stoi(headers["Content-Length"]);
+        if (body.size() < len) {
+            return Response::ErrorCode::ResponseInsufficent;
+        }
+    }
+
+    if (headers.find("Transfer-Encoding") != headers.end()) {
+        if (headers["Transfer-Encoding"] == "chunked") {
+            do {
+                std::string headerSegment = segments[0];
+                segments.erase(segments.begin());
+                int len = std::stoi(headerSegment, 0, 16);
+                if (0 == len) {
+                    break;
+                }
+                if (segments.size() <=0 || len > segments[0].size()) {
+                    return Response::ErrorCode::ResponseInsufficent;
+                }
+                body += segments[0];
+                segments.erase(segments.begin());
+            } while (true);
+
+            if (!StringUtil::isEndWith(body, "0\r\n\r\n")) {
+                return Response::ErrorCode::ResponseInsufficent;
+            }
+        }
+    }
+    return Response::ErrorCode::OK;
 }

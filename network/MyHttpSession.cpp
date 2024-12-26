@@ -92,7 +92,7 @@ void MyHttpSession::responseFile(std::string content, std::string fname, std::st
     if (!fname.empty()) {
         resp.headers["Content-Disposition"] = std::string("attachment; filename=\"") + fname + "\"";
     }
-    resp.headers["Content-Length"] = content.size();
+    resp.headers["Content-Length"] = std::to_string(content.size());
 
     std::string str = resp.serialize();
     send(str.c_str(), str.size());

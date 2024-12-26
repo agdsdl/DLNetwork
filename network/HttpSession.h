@@ -31,6 +31,7 @@
 
 namespace DLNetwork {
 namespace HTTP {
+std::vector<std::string> split(const char* buf, size_t bufLen, const std::string& delim, bool *found) noexcept;
 std::vector<std::string> split(const char* buf, size_t bufLen, const std::string& delim) noexcept;
 std::vector<std::string> split(const std::string& str, const std::string& delim) noexcept;
 
@@ -148,9 +149,16 @@ class Response
 {
 public:
     int responseCode = -1;
+    std::string responseReason;
     Version version = Version::HTTP_UNKNOWN;
     std::map<std::string, std::string> headers;
     std::string body;
+
+    enum class ErrorCode {
+        OK = 0,
+        ResponseInsufficent = -1,
+        ResponseFirstLineError = -2
+    };
 
 public:
     constexpr static int OK = 200;
@@ -212,7 +220,7 @@ public:
 
     std::string serialize() const noexcept;
 
-    void deserialize(const char* buf, size_t bufLen) noexcept;
+    Response::ErrorCode deserialize(const char* buf, size_t bufLen) noexcept;
 };
 } //HTTP
 } // ns DLNetwork

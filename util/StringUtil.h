@@ -21,6 +21,8 @@ public:
     static void trimLeft(std::string& str, char trimmed = ' ');
     static void trimRight(std::string& str, char trimmed = ' ');
     static void trim(std::string& str, char trimmed = ' ');
+
+    static bool isEndWith(std::string const& fullString, std::string const& ending);
 };
 
 std::string hexmem(const void* buf, size_t len);
