@@ -64,13 +64,7 @@ public:
 	//static EventThread* fromCurrentThread() {
 	//	return new EventThread(true);
 	//}
-	~EventThread() {
-		if (!_threadCancel)
-		{
-			_threadCancel = true;
-			_thread.join();
-		}
-	};
+	~EventThread();
 	void addPipeEvent();
 	void addEvent(int fd, int type, EventHandleFun&& callback);
 	void modifyEvent(int fd, int type);
@@ -106,6 +100,14 @@ protected:
 	time_t _checkTime = 0;
 	std::mutex _timerMutex;
 	std::condition_variable _timerCV;
+
+	#ifdef _USE_EPOLL_
+	#ifdef _WIN32_
+	HANDLE _epollfd;
+	#else
+	int _epollfd;
+	#endif
+	#endif
 
 private:
 	EventThread(bool fromCurrentThread = false);

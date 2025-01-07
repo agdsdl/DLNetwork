@@ -65,7 +65,7 @@ public:
     void closeAfterWrite() {
         _conn->closeAfterWrite();
     }
-    TcpConnection& connection() { return *_conn.get(); }
+    TcpConnection::Ptr connection() { return _conn; }
     EventThread* thread() { return _conn->getThread(); }
     void takeoverConn();
     std::string description() {
@@ -80,13 +80,13 @@ private:
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
     }
-    void onConnectionChange(TcpConnection& conn, ConnectEvent e);
-    bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
-    void onWriteDone(TcpConnection& conn);
+    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e);
+    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf);
+    void onWriteDone(TcpConnection::Ptr conn);
 
     void refreshCloseTimer();
     void send(const char* buf, size_t size);
-    std::unique_ptr<TcpConnection> _conn;
+    TcpConnection::Ptr _conn;
     bool _closed;
     UrlHandler _handler;
     ClosedHandler _closedHandler;

@@ -76,7 +76,7 @@ bool TcpClient::startConnect() {
 
     if (ecode == 0 || uvErr == UV_EAGAIN) {
         _state = State::connecting;
-        mInfo() << "TcpClient::startConnect" << "ecode" << ecode << fsock << _name << _serverAddr.description();
+        //mInfo() << "TcpClient::startConnect" << "ecode" << ecode << fsock << _name << _serverAddr.description();
         _thread->addEvent(fsock, EventType::Write, std::bind(&TcpClient::onEvent, this, std::placeholders::_1, std::placeholders::_2));
         return true;
     }
@@ -87,6 +87,11 @@ bool TcpClient::startConnect() {
 }
 
 void TcpClient::write(const char* buf, size_t size) {
+    if (_state != State::connected) {
+        mCritical() << "TcpClient::write state is not connected!";
+        return;
+    }
+
     _conn->write(buf, size);
 }
 
@@ -107,20 +112,20 @@ void TcpClient::close() {
     }
 }
 
-void TcpClient::connectionCallback(TcpConnection& conn, ConnectEvent e) {
+void TcpClient::connectionCallback(TcpConnection::Ptr conn, ConnectEvent e) {
     if (_connectionCb) {
         _connectionCb(*this, e);
     }
 }
 
-bool TcpClient::messageCallback(TcpConnection& conn, Buffer* buf) {
+bool TcpClient::messageCallback(TcpConnection::Ptr conn, Buffer* buf) {
     if (_messageCb) {
         return _messageCb(*this, buf);
     }
     return true;
 }
 
-void TcpClient::writedCallback(TcpConnection& conn) {
+void TcpClient::writedCallback(TcpConnection::Ptr conn) {
     if (_writedCb) {
         _writedCb(*this);
     }
@@ -153,7 +158,7 @@ void TcpClient::handleWrite(SOCKET sock) {
         return;
     }
     _thread->removeEvents(sock);
-    _conn = std::make_unique<TcpConnection>(_thread, sock);
+    _conn = TcpConnection::create(_thread, sock);
     _conn->setConnectCallback(std::bind(&TcpClient::connectionCallback, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnMessage(std::bind(&TcpClient::messageCallback, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnWriteDone(std::bind(&TcpClient::writedCallback, this, std::placeholders::_1));

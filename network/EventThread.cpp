@@ -32,6 +32,13 @@
 #include <MyLog.h>
 #include "uv_errno.h"
 #include "ThreadName.h"
+#ifdef _USE_EPOLL_
+#ifdef _WIN32_
+#include <wepoll.h>
+#else
+#include <sys/epoll.h>
+#endif
+#endif
 
 #define ToPoll(type) (type&EventType::Read ? POLLIN:0) | (type&EventType::Write ? POLLOUT:0) | (type&EventType::Error ? POLLERR:0) | (type&EventType::Hangup ? POLLHUP:0)
 #define ToEventType(rev) (rev&POLLIN?EventType::Read:0) | (rev&POLLOUT?EventType::Write:0) | (rev&POLLERR?EventType::Error:0) |  (rev&POLLHUP?EventType::Hangup:0)
@@ -62,6 +69,14 @@ EventThread::EventThread(bool fromCurrentThread) :_threadCancel(false) {
 		_selfThreadid = std::this_thread::get_id();
 		setThreadName(buf);
 	}
+
+    #ifdef _USE_EPOLL_
+    _epollfd = epoll_create(1);
+    if (_epollfd < 0) {
+        mCritical() << "epoll_create failed:" << strerror(errno);
+    }
+    #endif
+
 	addPipeEvent();
 }
 
@@ -72,6 +87,17 @@ void DLNetwork::EventThread::addPipeEvent()
 	//addEvent(_pipe.readFD(), EventType::Read, [this](int fd, int event) {onPipeEvent(); });
 	Event ev{ _pipe.readFD(), EventType::Read, std::bind(&EventThread::onPipeEvent, this) };
 	_event_map.emplace(_pipe.readFD(), ev);
+
+	#ifdef _USE_EPOLL_
+	struct epoll_event epev;
+	epev.events = 0; // 使用水平触发
+	epev.events |= EPOLLIN;
+	epev.data.fd = _pipe.readFD();
+	if(epoll_ctl(_epollfd, EPOLL_CTL_ADD, _pipe.readFD(), &epev) < 0) {
+		mCritical() << "EventThread::addPipeEvent epoll_ctl add failed:" << strerror(errno);
+	}
+	#endif
+
 }
 
 void EventThread::addEvent(int fd, int type, EventHandleFun && callback)
@@ -79,6 +105,17 @@ void EventThread::addEvent(int fd, int type, EventHandleFun && callback)
 	if (isCurrentThread()) {
 		Event ev{ fd, type, callback };
 		_event_map.emplace(fd, ev);
+		
+		#ifdef _USE_EPOLL_
+		struct epoll_event epev;
+		epev.events = 0; // 使用水平触发
+		if(type & EventType::Read) epev.events |= EPOLLIN;
+		if(type & EventType::Write) epev.events |= EPOLLOUT;
+		epev.data.fd = fd;
+		if(epoll_ctl(_epollfd, EPOLL_CTL_ADD, fd, &epev) < 0) {
+			mCritical() << "EventThread::addEvent epoll_ctl add failed:" << strerror(errno);
+		}
+		#endif
 	}
 	else {
 		dispatch([this, fd, type, callback]() {
@@ -93,6 +130,17 @@ void EventThread::modifyEvent(int fd, int type)
 		auto it = _event_map.find(fd);
 		if (it != _event_map.end()) {
 			it->second.eventType = type;
+			
+			#ifdef _USE_EPOLL_
+			struct epoll_event epev;
+			epev.events = 0;
+			if(type & EventType::Read) epev.events |= EPOLLIN;
+			if(type & EventType::Write) epev.events |= EPOLLOUT;
+			epev.data.fd = fd;
+			if(epoll_ctl(_epollfd, EPOLL_CTL_MOD, fd, &epev) < 0) {
+				mCritical() << "epoll_ctl mod failed:" << strerror(errno);
+			}
+			#endif
 		}
 	}
 	else {
@@ -106,6 +154,13 @@ void EventThread::removeEvents(int fd)
 {
 	if (isCurrentThread()) {
 		_event_map.erase(fd);
+		
+		#ifdef _USE_EPOLL_
+		struct epoll_event epev;
+		if(epoll_ctl(_epollfd, EPOLL_CTL_DEL, fd, &epev) < 0) {
+			mCritical() << "epoll_ctl del failed:" << strerror(errno);
+		}
+		#endif
 	}
 	else {
 		dispatch([this, fd]() {
@@ -235,6 +290,32 @@ void EventThread::loopOnce()
 		return;
 	}
 
+	#ifdef _USE_EPOLL_
+	const int MAX_EVENTS = 10;
+	struct epoll_event events[MAX_EVENTS];
+	
+	int ret = epoll_wait(_epollfd, events, MAX_EVENTS, nextDelay?nextDelay/1000:10000);
+	
+	if (ret > 0) {
+		for (int i = 0; i < ret; i++) {
+			int fd = events[i].data.fd;
+			auto iter = _event_map.find(fd);
+			if (iter != _event_map.end()) {
+				int eventType = 0;
+				if(events[i].events & EPOLLIN) eventType |= EventType::Read;
+				if(events[i].events & EPOLLOUT) eventType |= EventType::Write;
+				if(events[i].events & EPOLLERR) eventType |= EventType::Error;
+				if(events[i].events & EPOLLHUP) eventType |= EventType::Hangup;
+				
+				iter->second.callback(fd, eventType);
+			}
+		}
+	}
+	else if (ret < 0) {
+		mWarning() << "EventThread::loopOnce epoll_wait error:" << strerror(errno);
+	}
+	
+	#else
 	_pollfds.resize(_event_map.size());
 	int i = 0;
 	for (auto& evpair: _event_map) {
@@ -263,6 +344,7 @@ void EventThread::loopOnce()
 		//mWarning() << "EventThread::loopOnce poll error:" << myerrno;
 		//timeout
 	}
+	#endif
 }
 
 void EventThread::runloop()
@@ -332,3 +414,19 @@ void DLNetwork::EventThreadPool::runloop()
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 	}
 }
+
+EventThread::~EventThread() {
+    if (!_threadCancel) {
+        _threadCancel = true;
+        _thread.join();
+    }
+    #if defined(_USE_EPOLL_)
+	#ifdef _WIN32_
+    if (_epollfd != INVALID_HANDLE_VALUE) {
+	#else
+	if (_epollfd != -1) {
+	#endif
+        epoll_close(_epollfd);
+    }
+    #endif
+};

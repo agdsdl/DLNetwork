@@ -31,6 +31,7 @@
 #include "sockutil.h"
 #include "cppdefer.h"
 #include "StringUtil.h"
+#include "SSLWrapper.h"
 
 using namespace DLNetwork;
 
@@ -67,76 +68,57 @@ TcpConnection::~TcpConnection()
 {
     mDebug() << "TcpConnection::~TcpConnection()" << ptr2string(this) << this->description().c_str();
     close();
-#ifdef ENABLE_OPENSSL
-    if (_enableTls) {
-        if (_ssl) {
-            SSL_shutdown(_ssl);
-            SSL_free(_ssl);
-            _ssl = nullptr;
-        }
-        if (_ctx) {
-            SSL_CTX_free(_ctx);
-            _ctx = nullptr;
-        }
-    }
-#endif //ENABLE_OPENSSL
 }
+
 #ifdef ENABLE_OPENSSL
 void DLNetwork::TcpConnection::enableTls(std::string certFile, std::string keyFile, bool supportH2) {
-    _enableTls = true;
-    _certFile = certFile;
-    _keyFile = keyFile;
-
-    /* 以SSL V2 和V3 标准兼容方式产生一个SSL_CTX ，即SSL Content Text */
-    _ctx = SSL_CTX_new(TLS_server_method());
-    /*
-    也可以用SSLv2_server_method() 或SSLv3_server_method() 单独表示V2 或V3标准
-    */
-    if (_ctx == NULL) {
-        ERR_print_errors_fp(stdout);
-        exit(1);
+    _ssl = std::make_unique<SSLWrapper>();
+    bool ret;
+    if (_clientMode) {
+        ret = _ssl->initAsClient();
+    } else {
+        ret = _ssl->init(certFile, keyFile, supportH2);
     }
-    /* 载入用户的数字证书， 此证书用来发送给客户端。证书里包含有公钥*/
-    if (SSL_CTX_use_certificate_file(_ctx, _certFile.c_str(), SSL_FILETYPE_PEM) <= 0) {
-        ERR_print_errors_fp(stdout);
-        exit(1);
-    }
-    /* 载入用户私钥*/
-    if (SSL_CTX_use_PrivateKey_file(_ctx, _keyFile.c_str(), SSL_FILETYPE_PEM) <= 0) {
-        ERR_print_errors_fp(stdout);
-        exit(1);
-    }
-    /* 检查用户私钥是否正确*/
-    if (!SSL_CTX_check_private_key(_ctx)) {
-        ERR_print_errors_fp(stdout);
-        exit(1);
+    if (!ret) {
+        mCritical() << "Failed to initialize SSL";
+        _ssl.reset();
+        return;
     }
 
-    SSL_CTX_set_verify(_ctx, SSL_VERIFY_NONE, NULL);
-    SSL_CTX_set_options(_ctx, SSL_OP_NO_RENEGOTIATION);
-    if (supportH2) {
-        SSL_CTX_set_alpn_select_cb(_ctx, alpnCallback, (void*)&alpnProtos);
+    _ssl->setOnEncData([this](const char* data, size_t len) {
+        mDebug() << "TcpConnection::enableTls OnEncData" << len;
+        DLNetwork::Buffer newBuf;
+        newBuf.append(data, len);
+        std::lock_guard<std::mutex> lock(_writeBufMutex);
+        _writeBuf.push_back(std::move(newBuf));
+        _eventType |= EventType::Write;
+        _thread->modifyEvent(_sock, _eventType);
+    });
+
+    _ssl->setOnDecData([this](const char* data, size_t len) {
+        mDebug() << "TcpConnection::enableTls OnDecData" << len;
+        if (_messageCb) {
+            Buffer buf;
+            buf.append(data, len);
+            _messageCb(shared_from_this(), &buf);
+        }
+    });
+
+    if (_clientMode) {
+        _ssl->startHandshake();
     }
-
-    _ssl = SSL_new(_ctx);
-    _rbio = BIO_new(BIO_s_mem());
-    _wbio = BIO_new(BIO_s_mem());
-
-    SSL_set_bio(_ssl, _rbio, _wbio);
-    SSL_set_accept_state(_ssl); // The server uses SSL_set_accept_state
-    //size_t pendingW = BIO_ctrl_pending(_wbio);
-    //size_t pendingR = BIO_ctrl_pending(_rbio);
+    
 }
 #endif // ENABLE_OPENSSL
 
-std::unique_ptr<TcpConnection> TcpConnection::connectTo(EventThread* thread, INetAddress addr) {
+TcpConnection::Ptr TcpConnection::createClient(EventThread* thread, INetAddress addr) {
     if (!addr.isIP4() && !addr.isIP6()) {
         mCritical() << "TcpConnection::connectTo badAddr!" << addr.description().c_str();
         return nullptr;
     }
-    SOCKET fsock = socket(AF_INET, SOCK_STREAM, 0);
-    if (fsock < 0) {
-        mCritical() << "TcpConnection::connectTo init sock error" << get_uv_errmsg();
+    SOCKET sock = socket(addr.isIP6() ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) {
+        mCritical() << "TcpConnection::connectTo create socket failed:" << get_uv_errmsg();
         return nullptr;
     }
 
@@ -152,15 +134,21 @@ std::unique_ptr<TcpConnection> TcpConnection::connectTo(EventThread* thread, INe
     //    return nullptr;
     //}
 
-    int ecode = connect(fsock, (sockaddr*)&addr.addr4(), addr.isIP4()?sizeof(addr.addr4()):sizeof(addr.addr6()));
-    if (ecode < 0) {
-        mCritical() << "TcpConnection::connectTo connect" << addr.description().c_str() << "error" << get_uv_errmsg();
-        return nullptr;
-    }
-    auto conn = std::make_unique<TcpConnection>(thread, fsock);
+    auto conn = create(thread, sock);
     conn->setPeerAddr(addr);
     conn->attach();
+    conn->_clientMode = true;
     return conn;
+}
+
+void TcpConnection::startConnect() {
+    int ecode = connect(_sock, (sockaddr*)&_peerAddr.addr4(), _peerAddr.isIP4()?sizeof(_peerAddr.addr4()):sizeof(_peerAddr.addr6()));
+    if (ecode < 0) {
+        mCritical() << "TcpConnection::connectTo connect" << _peerAddr.description().c_str() << "error" << get_uv_errmsg();
+        return;
+    }
+    _eventType = EventType::Write;
+    attach();
 }
 
 void TcpConnection::attach() {
@@ -175,24 +163,21 @@ void TcpConnection::attach() {
 
 void TcpConnection::writeInner(const char* buf, size_t size)
 {
-    size_t remain = size;
-
-    if (remain) {
-#ifdef ENABLE_OPENSSL
-        if (_enableTls) {
-            std::lock_guard<std::mutex> lock(_writeTlsBufMutex);
-            _writeTlsBuf.append(buf, size);
+    if (size) {
+        if (_ssl) {
+            _ssl->sendUnencrypted(buf, size);
+        } else {
+            DLNetwork::Buffer newBuf;
+            newBuf.append(buf, size);
+            
+            {
+                std::lock_guard<std::mutex> lock(_writeBufMutex);
+                _writeBuf.push_back(std::move(newBuf));
+            }
+            
+            _eventType |= EventType::Write;
+            _thread->modifyEvent(_sock, _eventType);
         }
-        else {
-            std::lock_guard<std::mutex> lock(_writeBufMutex);
-            _writeBuf.append(buf, size);
-        }
-#else
-        std::lock_guard<std::mutex> lock(_writeBufMutex);
-        _writeBuf.append(buf, size);
-#endif // ENABLE_OPENSSL
-        _eventType |= EventType::Write;
-        _thread->modifyEvent(_sock, _eventType);
     }
 }
 
@@ -238,7 +223,7 @@ void TcpConnection::close()
     //}
     SOCKET sock = _sock;
     if (_connectionCb) {
-        _connectionCb(*this, ConnectEvent::Closed);
+        _connectionCb(shared_from_this(), ConnectEvent::Closed);
     }
     myclose(sock); // this may be deleted after cb.
 }
@@ -253,7 +238,7 @@ void TcpConnection::reset() {
     _thread->removeEvents(_sock);
     SOCKET sock = _sock;
     if (_connectionCb) {
-        _connectionCb(*this, ConnectEvent::Closed);
+        _connectionCb(shared_from_this(), ConnectEvent::Closed);
     }
     struct linger sl;
     sl.l_onoff = 1;		/* non-zero value enables linger option in kernel */
@@ -273,7 +258,7 @@ std::string TcpConnection::description() {
 
 void TcpConnection::closeAfterWrite() {
     std::unique_lock<std::mutex> lock(_writeBufMutex);
-    if (_writeBuf.readableBytes() == 0) {
+    if (_writeBuf.size() == 0) {
         lock.unlock();
         close();
     }
@@ -311,85 +296,23 @@ bool TcpConnection::handleRead(SOCKET sock)
     int ecode = 0;
     int32_t n = _readBuf.readFd(sock, &ecode);
     if (n > 0) {
-#ifdef ENABLE_OPENSSL
-        if (_enableTls) {
-            // Here we get the data from the client suppose it's in the variable buf
-// and write it to the connection reader BIO.
-        //std::string inbuf;
-        //先把所有数据都取出来
-        //_readTlsBuf.append(_readBuf.peek(), _readBuf.readableBytes());
-            DEFER(_readBuf.retrieveAll(););
-
-            int w = BIO_write(_rbio, _readBuf.peek(), _readBuf.readableBytes());
-            assert(w == _readBuf.readableBytes());
-            //size_t pendingW = BIO_ctrl_pending(_wbio);
-            //size_t pendingR = BIO_ctrl_pending(_rbio);
-            //mInfo() << "onmsg" << description() << "pendingW:" << pendingW << " pendingR:" << pendingR;
-            //ERR_print_errors_fp(stdout);
-
-            if (!SSL_is_init_finished(_ssl)) {
-                int r = SSL_do_handshake(_ssl);
-                if (r < 1) {
-                    int ecode = SSL_get_error(_ssl, r);
-                    if (ecode == SSL_ERROR_WANT_READ) {
-                        //mWarning() << "SSL_ERROR_WANT_READ when SSL_do_handshake";
-                        handleSSLRead();
-                    }
-                    else if (ecode == SSL_ERROR_WANT_WRITE) {
-                        //mWarning() << "SSL_ERROR_WANT_WRITE when SSL_do_handshake";
-                    }
-                    else {
-                        mWarning() << "SSL_do_handshake error:" << ecode;
-                        ERR_print_errors_fp(stdout);
-                    }
-
-                    return true;
-                }
-                else {
-                    mInfo() << "SSL handshake finished";
-                }
+        if (_ssl) {
+            int ret = _ssl->onRecvEncrypted(_readBuf.peek(), _readBuf.readableBytes());
+            if (ret > 0) {
+                _readBuf.retrieve(ret);
+                return true;
             }
             else {
-                //mInfo() << "SSL handshake finished2";
-            }
-            char buf2[4096];
-
-            int ret = 0;
-            do {
-                ret = SSL_read(_ssl, buf2, sizeof(buf2));
-                if (ret <= 0) {
-                    int err = SSL_get_error(_ssl, ret);
-                    if (err == SSL_ERROR_WANT_READ) {
-                        //mWarning() << "SSL_ERROR_WANT_READ when SSL_read";
-                        handleSSLRead();
-                    }
-                    else if (err == SSL_ERROR_WANT_WRITE) {
-                        //mWarning() << "SSL_ERROR_WANT_WRITE when SSL_read";
-                    }
-                    break;
-                }
-                else {
-                    _readTlsBuf.append(buf2, ret);
-                }
-            } while (ret > 0);
-            if (_messageCb) {
-                return _messageCb(*this, &_readTlsBuf);
-            }
-            else {
+                mWarning() << "TcpConnection::handleRead SSL error:" << ret;
+                close();
                 return false;
             }
-        }
-        else {
+        } else {
             if (_messageCb) {
-                return _messageCb(*this, &_readBuf);
-            }
-            else {
-                return false;
+                return _messageCb(shared_from_this(), &_readBuf);
             }
         }
-#else
-        return _messageCb(*this, &_readBuf);
-#endif // ENABLE_OPENSSL
+        return false;
     }
     else if (n == 0) {
         close();
@@ -407,84 +330,67 @@ bool TcpConnection::handleWrite(SOCKET sock)
     if (_closing) {
         return false;
     }
-
-#ifdef ENABLE_OPENSSL
-    if (_enableTls) {
-        {
-            std::lock_guard<std::mutex> lock(_writeTlsBufMutex);
-            if (_writeTlsBuf.readableBytes() <= 0) {
-                return true;
-            }
+    if (!_connected) {
+        assert(_clientMode);
+        _connected = true;
+        _eventType = EventType::Read;
+        _thread->modifyEvent(_sock, _eventType);
+        if (_connectionCb) {
+            _connectionCb(shared_from_this(), ConnectEvent::Established);
         }
-        do {
-            std::unique_lock<std::mutex> lock(_writeTlsBufMutex);
-            int r = SSL_write(_ssl, _writeTlsBuf.peek(), _writeTlsBuf.readableBytes());
-            if (r <= 0) {
-                int ecode = SSL_get_error(_ssl, r);
-                if (ecode == SSL_ERROR_WANT_READ) {
-                    mWarning() << "SSL_ERROR_WANT_READ when send";
-                    lock.unlock();
-                    handleSSLRead();
-                }
-                else if (ecode == SSL_ERROR_WANT_WRITE) {
-                    mWarning() << "SSL_ERROR_WANT_WRITE when send";
-                }
-                else if (ecode == SSL_ERROR_ZERO_RETURN) {
-                    mWarning() << "ssl peer closed when send";
-                    break;
-                }
-                else {
-                    mWarning() << "SSL_write error:" << ecode;
-                    ERR_print_errors_fp(stdout);
-                    ERR_print_errors_fp(stderr);
-                    break;
-                }
-            }
-            else {
-                _writeTlsBuf.retrieve(r);
-                if (_writeTlsBuf.readableBytes() == 0) {
-                    break;
-                }
-            }
-        } while (true);
-        return handleSSLRead();
     }
-    else {
-        return realSend();
-    }
-#else
+
     return realSend();
-#endif
 }
 
 bool DLNetwork::TcpConnection::realSend()
 {
-    std::unique_lock<std::mutex> lock(_writeBufMutex);
-    int n = ::send(_sock, _writeBuf.peek(), _writeBuf.readableBytes(), 0);
-    if (n >= 0) {
-        _writeBuf.retrieve(n);
-        if (_writeBuf.readableBytes() == 0) {
-            _eventType &= ~EventType::Write;
-            _thread->modifyEvent(_sock, _eventType);
-            if (_writedcb) {
-                _writedcb(*this);
-                //_thread->dispatch([this]() {
-                //});
-            }
-            if (_closeAfterWrite) {
-                lock.unlock();
-                close();
-                return false;
-            }
+    decltype(_writeBuf) writeBufTmp;
+    {
+        std::lock_guard<std::mutex> lock(_writeBufMutex);
+        if (!_writeBuf.empty()) {
+            writeBufTmp.swap(_writeBuf);
         }
-        return true;
     }
-    else {
-        mWarning() << "TcpConnection::handleWrite error:" << get_uv_errmsg();
-        lock.unlock();
-        close();
-        return false;
+
+    while (!writeBufTmp.empty()) {
+        auto &buf = writeBufTmp.front();
+        // 发送数据（在锁外进行）
+        int n = ::send(_sock, buf.peek(), buf.readableBytes(), 0);
+        if (n >= 0) {
+            if (n == buf.readableBytes()) {
+                writeBufTmp.pop_front();
+            } else {
+                buf.retrieve(n);
+                break;
+            }
+        } else {
+            mWarning() << "TcpConnection::handleWrite error:" << get_uv_errmsg();
+            close();
+            return false;
+        }
     }
+    // 回滚未发送完毕的数据
+    if (!writeBufTmp.empty()) {
+        // 有剩余数据
+        std::lock_guard<std::mutex> lock(_writeBufMutex);
+        writeBufTmp.swap(_writeBuf);
+        _writeBuf.insert(_writeBuf.end(), writeBufTmp.begin(), writeBufTmp.end());
+    }
+    else{
+        _eventType &= ~EventType::Write;
+        _thread->modifyEvent(_sock, _eventType);
+        
+        if (_writedcb) {
+            _writedcb(shared_from_this());
+        }
+        
+        if (_closeAfterWrite) {
+            close();
+            return false;
+        }
+    }
+    return true;
 }
 
 void TcpConnection::handleHangup(SOCKET sock)
@@ -500,35 +406,3 @@ void TcpConnection::handleError(SOCKET sock)
     mWarning() << "TcpConnection handleError:" << sock << ecode << eMsg;
     close();
 }
-
-#ifdef ENABLE_OPENSSL
-bool TcpConnection::handleSSLRead()
-{
-    int read = 0;
-    do {
-        char buf[4096];
-        read = BIO_read(_wbio, buf, sizeof(buf));
-        if (read > 0) {
-            std::lock_guard<std::mutex> lock(_writeBufMutex);
-            _writeBuf.append(buf, read);
-            //writeInner(buf, read);
-        }
-        else {
-            //TODO: BIO_should_retry
-        }
-    } while (read > 0);
-    return realSend();
-    //do {
-    //    size_t pendingW = BIO_ctrl_pending(_wbio);
-    //    size_t pendingR = BIO_ctrl_pending(_rbio);
-    //    mInfo() << description() << "pendingW:" << pendingW << " pendingR:" << pendingR;
-    //    if (pendingW > 0) {
-    //        char* buf = new char[pendingW];
-    //        int read = BIO_read(_wbio, buf, pendingW);
-    //        assert(read == pendingW);
-    //        writeInner(buf, pendingW);
-    //        delete[] buf;
-    //    }
-    //} while (read != pendingW);
-}
-#endif // ENABLE_OPENSSL

@@ -82,7 +82,7 @@ void TcpServer::onEvent(SOCKET sock, int eventType) {
         socklen_t nLen = sizeof(sockaddr_in);
         SOCKET fsock = ::accept(sock, (sockaddr*)&clientAddr, &nLen);
         if (fsock != -1) {
-            auto conn = std::make_unique<TcpConnection>(_thread, fsock);
+            auto conn = TcpConnection::create(_thread, fsock);
             if (_connectionCb) {
                 _connectionCb(std::move(conn));
             }

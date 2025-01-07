@@ -188,7 +188,7 @@ void MyHttpSession::takeoverConn() {
     _conn->attach();
 }
 
-void MyHttpSession::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
+void MyHttpSession::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e) {
     if (e == ConnectEvent::Closed) {
         _closed = true;
         //for (auto& onclose: _closeHandlers) {
@@ -203,7 +203,7 @@ void MyHttpSession::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
     }
 }
 
-bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
+bool MyHttpSession::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
     std::string inbuf;
     //先把所有数据都取出来
     inbuf.append(buf->peek(), buf->readableBytes());
@@ -217,7 +217,7 @@ bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
     HTTP::Request req;
     HTTP::Request::ErrorCode ecode = req.deserialize(inbuf.c_str(), inbuf.length());
     if (ecode != HTTP::Request::ErrorCode::OK) {
-        conn.close();
+        conn->close();
         return false;
     }
 
@@ -234,13 +234,13 @@ bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
 
     bool close = false;
     if (req.version == HTTP::Version::HTTP_1_0) {
-        conn.closeAfterWrite();
+        conn->closeAfterWrite();
         close = true;
     }
     if (req.version == HTTP::Version::HTTP_1_1) {
         auto iter = req.headers.find("Connection");
         if (iter != req.headers.end() && iter->second == "close") {
-            conn.closeAfterWrite();
+            conn->closeAfterWrite();
             close = true;
         }
     }
@@ -251,7 +251,7 @@ bool MyHttpSession::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
     return true;
 }
 
-void MyHttpSession::onWriteDone(TcpConnection& conn) {
+void MyHttpSession::onWriteDone(TcpConnection::Ptr conn) {
 }
 
 void MyHttpSession::refreshCloseTimer() {
@@ -264,7 +264,7 @@ void MyHttpSession::refreshCloseTimer() {
             }
             strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
                 if (auto strongThis = weakThis.lock()) {
-                    strongThis->connection().closeAfterWrite();
+                    strongThis->_conn->closeAfterWrite();
                 }
                 return 0;
                 });

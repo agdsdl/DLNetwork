@@ -22,6 +22,22 @@ else()
 	project(DLNetwork VERSION 0.1.0 LANGUAGES C CXX)
 endif()
 
+if(UNIX AND NOT APPLE)
+	# Linux平台启用epoll
+	add_definitions(-D_USE_EPOLL_)
+endif()
+
+if(WIN32)
+	# Windows平台使用wepoll
+	# add_definitions(-D_USE_EPOLL_ -D_USE_WEPOLL_ -D_WIN32_)
+	add_definitions(-D_WIN32_)
+endif()
+
+if(_USE_EPOLL_)
+    message(STATUS "EPOLL is enabled")
+    # 可以添加相关的编译定义
+    add_definitions(-D_USE_EPOLL_=1)
+endif()
 
 add_subdirectory(util)
 add_subdirectory(network)

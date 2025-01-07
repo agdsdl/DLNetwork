@@ -32,7 +32,7 @@ using namespace DLNetwork;
 
 const char HTTP2_PREFACE[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-MyHttp2Session::MyHttp2Session(std::unique_ptr<TcpConnection>&& conn) :_conn(std::move(conn)), _closed(false) {
+MyHttp2Session::MyHttp2Session(TcpConnection::Ptr&& conn) :_conn(std::move(conn)), _closed(false) {
 }
 
 MyHttp2Session::~MyHttp2Session() {
@@ -60,7 +60,7 @@ void MyHttp2Session::takeoverConn() {
     _conn->attach();
 }
 
-void MyHttp2Session::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
+void MyHttp2Session::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e) {
     if (e == ConnectEvent::Closed) {
         _closed = true;
         //for (auto& onclose: _closeHandlers) {
@@ -77,7 +77,7 @@ void MyHttp2Session::onConnectionChange(TcpConnection& conn, ConnectEvent e) {
     }
 }
 
-bool MyHttp2Session::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
+bool MyHttp2Session::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
     if (_state == 0) {
         if (buf->readableBytes() < sizeof(HTTP2_PREFACE)-1) {
             return true; // wait full preface
@@ -307,7 +307,7 @@ void MyHttp2Session::onStreamEnd(std::shared_ptr<MyHttp2Stream> stream)
     });
 }
 
-void MyHttp2Session::onWriteDone(TcpConnection& conn) {
+void MyHttp2Session::onWriteDone(TcpConnection::Ptr conn) {
 }
 
 void MyHttp2Session::send(const char* buf, size_t size)
@@ -457,7 +457,7 @@ void MyHttp2Session::refreshCloseTimer() {
             }
             strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
                 if (auto strongThis = weakThis.lock()) {
-                    strongThis->connection().closeAfterWrite();
+                    strongThis->_conn->closeAfterWrite();
                 }
                 return 0;
                 });

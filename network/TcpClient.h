@@ -63,7 +63,7 @@ public:
 		_errorCb = cb;
 	}
 
-	const std::unique_ptr<TcpConnection>& connection() {
+	const TcpConnection::Ptr& connection() {
 		return _conn;
 	}
 	SOCKET sock() {
@@ -79,9 +79,9 @@ public:
 	uint32_t seq = 0;
 	uint32_t wantSeq = 0;
 private:
-	void connectionCallback(TcpConnection& conn, ConnectEvent e);
-	bool messageCallback(TcpConnection& conn, Buffer* buf);
-	void writedCallback(TcpConnection& conn);
+	void connectionCallback(TcpConnection::Ptr conn, ConnectEvent e);
+	bool messageCallback(TcpConnection::Ptr conn, Buffer* buf);
+	void writedCallback(TcpConnection::Ptr conn);
 
 	void onEvent(SOCKET sock, int eventType);
 	void handleRead(SOCKET sock);
@@ -89,7 +89,7 @@ private:
 	void handleHangup(SOCKET sock);
 	void handleError(SOCKET sock);
 
-	std::unique_ptr<TcpConnection> _conn;
+	TcpConnection::Ptr _conn;
 	ConnectionCallback _connectionCb;
 	MessageCallback _messageCb;
 	WritedCallback _writedCb;

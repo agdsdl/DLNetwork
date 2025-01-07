@@ -55,39 +55,28 @@ public:
     }
     ~Server() {
         _tcpServer.stop();
-        std::set<TcpConnection*> temp;
-        {
-            std::lock_guard<std::mutex> l(_mutex);
-            temp.swap(_connetions);
-        }
-        _tcpServer.thread()->dispatch([temp]() {
-            for (auto c : temp) {
-                delete c;
-            }
-        });
     }
 private:
-    void onConnection(std::unique_ptr<TcpConnection>&& conn) {
+    void onConnection(TcpConnection::Ptr&& conn) {
         conn->setConnectCallback(std::bind(&Server::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
         conn->setOnMessage(std::bind(&Server::onMessage, this, std::placeholders::_1, std::placeholders::_2));
         conn->setOnWriteDone(std::bind(&Server::onWriteDone, this, std::placeholders::_1));
         conn->attach();
 
         std::lock_guard<std::mutex> l(_mutex);
-        _connetions.insert(conn.release());
+        _connetions.insert(conn);
     }
 
-    void onConnectionChange(TcpConnection& conn, ConnectEvent e) {
+    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e) {
         if (e == ConnectEvent::Closed) {
             {
                 std::lock_guard<std::mutex> l(_mutex);
-                _connetions.erase(&conn);
+                _connetions.erase(conn);
             }
-            delete &conn;
         }
     }
 
-    bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf) {
+    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
         std::string inbuf;
         inbuf.append(buf->peek(), buf->readableBytes());
         buf->retrieveAll();
@@ -95,10 +84,10 @@ private:
         return true;
     }
 
-    void onWriteDone(TcpConnection& conn) {
+    void onWriteDone(TcpConnection::Ptr conn) {
     }
 
-    std::set<TcpConnection*> _connetions;
+    std::set<TcpConnection::Ptr> _connetions;
     TcpServer _tcpServer;
     std::mutex _mutex;
 };
@@ -116,10 +105,6 @@ public:
         _client->write(buf, size);
     }
     ~Client() {
-        EventThread* t = _client->thread();
-        t->dispatch([c = _client]() mutable {
-            delete c;
-            });
         _client = nullptr;
     }
 private:
@@ -155,9 +140,9 @@ int main(int argc, char** argv) {
 
     Client c;
     c.start();
-    char buf[128];
+    char buf[8*1024];
     do {
-        char* r = gets_s(buf, 128);
+        char* r = gets_s(buf, sizeof(buf));
         if (!r) {
             break;
         }

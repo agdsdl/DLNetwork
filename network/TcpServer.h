@@ -37,7 +37,7 @@ class TcpServer
 public:
     TcpServer();
     ~TcpServer();
-    typedef std::function<void(std::unique_ptr<TcpConnection>&& conn)> ConnectionAcceptCallback;
+    typedef std::function<void(TcpConnection::Ptr&& conn)> ConnectionAcceptCallback;
 
 
     bool start(EventThread* loop, sockaddr_in listenAddr, std::string name, bool reusePort = true);

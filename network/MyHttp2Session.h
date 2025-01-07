@@ -43,7 +43,7 @@ public:
     enum {supportH2 = true};
     typedef std::function<void(HTTP::Request& request, std::shared_ptr<CallbackSession> sess)> UrlHandler;
     typedef std::function<void(std::shared_ptr<MyHttp2Session> sess)> ClosedHandler;
-    MyHttp2Session(std::unique_ptr<TcpConnection>&& conn);
+    MyHttp2Session(TcpConnection::Ptr&& conn);
     ~MyHttp2Session();
     void stop();
     void setClosedHandler(ClosedHandler handler) {
@@ -55,7 +55,7 @@ public:
     //void clearClosedHandler() {
     //    _closeHandlers.clear();
     //}
-    TcpConnection& connection() { return *_conn.get(); }
+    TcpConnection::Ptr connection() { return _conn; }
     EventThread* thread() { return _conn->getThread(); }
     void takeoverConn();
     std::string description() {
@@ -71,9 +71,9 @@ private:
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
     }
-    void onConnectionChange(TcpConnection& conn, ConnectEvent e);
-    bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
-    void onWriteDone(TcpConnection& conn);
+    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e);
+    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf);
+    void onWriteDone(TcpConnection::Ptr conn);
     void closeStream(std::shared_ptr<MyHttp2Stream> stream);
     void onStreamEnd(std::shared_ptr<MyHttp2Stream> stream);
     void refreshCloseTimer();
@@ -103,7 +103,7 @@ private:
     std::shared_ptr<MyHttp2Stream> getOrGenStream(uint32_t streamId);
     void connectionError(H2Error err);
     void healthCheck();
-    std::unique_ptr<TcpConnection> _conn;
+    TcpConnection::Ptr _conn;
     bool _closed;
     Timer* _closeTimer = nullptr;
     UrlHandler _handler;

@@ -40,6 +40,7 @@ class MyHttpClient
 public:
     typedef std::function<void(MyHttpClient& cli, HTTP::Response&& response)> ResponseCallback;
     typedef std::function<void(MyHttpClient& cli)> CloseCallback;
+    typedef std::function<void(MyHttpClient& cli)> ConnectedCallback;
 
     MyHttpClient() {
 
@@ -48,15 +49,17 @@ public:
 
     }
     void setOnResponse(ResponseCallback cb) { _onResponse = std::move(cb); }
+    void setOnConnected(ConnectedCallback cb) { _onConnected = std::move(cb); }
+    void setOnClose(CloseCallback cb) { _onClose = std::move(cb); }
     //void startRequest(std::string method, std::string url, std::string body);
     static bool extractHostPortURI(const std::string& url, std::string& protocol, std::string& host, std::string& port, std::string& uri);
-    void connect(std::string host, int port, std::string certFile, std::string keyFile);
+    void connect(std::string host, int port, bool tls,std::string certFile, std::string keyFile);
     void sendRequest(std::string method, std::string uri, std::string body, std::string contentType);
     void close();
 private:
-    void onConnectionChange(TcpConnection& conn, ConnectEvent e);
-    bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
-    void onWriteDone(TcpConnection& conn);
+    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e);
+    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf);
+    void onWriteDone(TcpConnection::Ptr conn);
 
     EventThread* _thread = nullptr;
 
@@ -64,9 +67,10 @@ private:
     int _port = 0;
     std::string _certFile;
     std::string _keyFile;
-    std::unique_ptr<TcpConnection> _connection;
+    TcpConnection::Ptr _connection;
     ResponseCallback _onResponse;
     CloseCallback _onClose;
+    ConnectedCallback _onConnected;
     bool _closed = false;
 };
 

@@ -27,16 +27,13 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#ifdef ENABLE_OPENSSL
-#include <openssl/types.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-#endif // ENABLE_OPENSSL
+#include <deque>
 #include "EventThread.h"
 #include "sockutil.h"
 #include "Buffer.h"
 #include "INetAddress.h"
 #include "MyLog.h"
+#include "SSLWrapper.h"
 
 namespace DLNetwork {
 enum class ConnectEvent {
@@ -44,19 +41,31 @@ enum class ConnectEvent {
     Closed
 };
 
-class TcpConnection
+class TcpConnection : public std::enable_shared_from_this<TcpConnection>
 {
 public:
-    typedef std::function<void(TcpConnection& conn, ConnectEvent e)> ConnectionCallback;
-    typedef std::function<bool(TcpConnection& conn, DLNetwork::Buffer*)> MessageCallback;
-    typedef std::function<void(TcpConnection& conn)> WritedCallback;
+    using Ptr = std::shared_ptr<TcpConnection>;
+    static Ptr create(EventThread* thread, SOCKET sock) {
+        auto t = thread ? thread : EventThreadPool::instance().getIdlestThread();
+        auto conn = std::shared_ptr<TcpConnection>(new TcpConnection(t, sock), [t](TcpConnection *ptr) {
+            if (t) {
+                t->dispatch([ptr]() { delete ptr; });
+            } else {
+                delete ptr;
+            }
+        });
+        return conn;
+    }
+    typedef std::function<void(TcpConnection::Ptr conn, ConnectEvent e)> ConnectionCallback;
+    typedef std::function<bool(TcpConnection::Ptr conn, DLNetwork::Buffer*)> MessageCallback;
+    typedef std::function<void(TcpConnection::Ptr conn)> WritedCallback;
 
-    TcpConnection(EventThread* thread, SOCKET sock);
     ~TcpConnection();
 #ifdef ENABLE_OPENSSL
     void enableTls(std::string certFile, std::string keyFile, bool supportH2=true);
 #endif // ENABLE_OPENSSL
-    static std::unique_ptr<TcpConnection> connectTo(EventThread* thread, INetAddress addr);
+    static Ptr createClient(EventThread* thread, INetAddress addr);
+    void startConnect();
     void attach();
     void setPeerAddr(INetAddress addr) {
         _peerAddr = addr;
@@ -99,6 +108,8 @@ public:
     std::string description();
     void closeAfterWrite();
 protected:
+    TcpConnection(EventThread* thread, SOCKET sock);
+
     void writeInner(const char* buf, size_t size);
     void onEvent(SOCKET sock, int eventType);
     bool handleRead(SOCKET sock);
@@ -109,7 +120,7 @@ protected:
     void writeInThread(const char* buf, size_t size);
 
     DLNetwork::Buffer _readBuf;
-    DLNetwork::Buffer _writeBuf;
+    std::deque<DLNetwork::Buffer> _writeBuf;
     SOCKET _sock;
     EventThread* _thread;
     ConnectionCallback _connectionCb;
@@ -117,25 +128,13 @@ protected:
     WritedCallback _writedcb;
     bool _closing;
     std::mutex _writeBufMutex;
-    std::mutex _writeTlsBufMutex;
+    std::unique_ptr<SSLWrapper> _ssl;
     int _eventType;
     INetAddress _peerAddr;
     INetAddress _selfAddr;
     bool _closeAfterWrite = false;
-
-#ifdef ENABLE_OPENSSL
-    bool handleSSLRead();
-
-    SSL_CTX* _ctx = nullptr;
-    SSL* _ssl = nullptr;
-    BIO* _rbio = nullptr;
-    BIO* _wbio = nullptr;
-    bool _enableTls = false;
-    std::string _certFile;
-    std::string _keyFile;
-    DLNetwork::Buffer _writeTlsBuf;
-    DLNetwork::Buffer _readTlsBuf;
-#endif // ENABLE_OPENSSL
+    bool _clientMode = false;
+    bool _connected = false;
 };
 
 } // DLNetwork

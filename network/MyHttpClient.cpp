@@ -92,14 +92,17 @@ bool MyHttpClient::extractHostPortURI(const std::string& url, std::string& proto
     }
 }
 
-void DLNetwork::MyHttpClient::connect(std::string host, int port, std::string certFile, std::string keyFile)
+void DLNetwork::MyHttpClient::connect(std::string host, int port, bool tls, std::string certFile, std::string keyFile)
 {
     EventThread* thread = EventThreadPool::instance().getIdlestThread();
     INetAddress address = INetAddress::fromDomainPort(host.c_str(), port);
-    _connection = TcpConnection::connectTo(thread, address);
-
+    _connection = TcpConnection::createClient(thread, address);
+    if (tls) {
+        _connection->enableTls(certFile, keyFile, false);
+    }
     _connection->setOnMessage(std::bind(&MyHttpClient::onMessage, this, std::placeholders::_1, std::placeholders::_2));
     _connection->setOnWriteDone(std::bind(&MyHttpClient::onWriteDone, this, std::placeholders::_1));
+    _connection->setOnConnect(std::bind(&MyHttpClient::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
     _connection->attach();
 
 }
@@ -129,11 +132,17 @@ void DLNetwork::MyHttpClient::sendRequest(std::string method, std::string uri, s
 
 void DLNetwork::MyHttpClient::close()
 {
+    _connection->close();
 }
 
-void DLNetwork::MyHttpClient::onConnectionChange(TcpConnection& conn, ConnectEvent e)
+void DLNetwork::MyHttpClient::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e)
 {
-    if (e == ConnectEvent::Closed) {
+    if (e == ConnectEvent::Established) {
+        if (_onConnected) {
+            _onConnected(*this);
+        }
+    }
+    else if (e == ConnectEvent::Closed) {
         _closed = true;
 
         if (_onClose) {
@@ -143,7 +152,7 @@ void DLNetwork::MyHttpClient::onConnectionChange(TcpConnection& conn, ConnectEve
     }
 }
 
-bool DLNetwork::MyHttpClient::onMessage(TcpConnection& conn, DLNetwork::Buffer* buf)
+bool DLNetwork::MyHttpClient::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf)
 {
     std::string inbuf;
     //先把所有数据都取出来
@@ -158,7 +167,7 @@ bool DLNetwork::MyHttpClient::onMessage(TcpConnection& conn, DLNetwork::Buffer* 
         return true;
     }
     else if (ecode != HTTP::Response::ErrorCode::OK) {
-        conn.close();
+        conn->close();
         return false;
     }
 
@@ -171,6 +180,6 @@ bool DLNetwork::MyHttpClient::onMessage(TcpConnection& conn, DLNetwork::Buffer* 
     return true;
 }
 
-void DLNetwork::MyHttpClient::onWriteDone(TcpConnection& conn)
+void DLNetwork::MyHttpClient::onWriteDone(TcpConnection::Ptr conn)
 {
 }
