@@ -28,6 +28,7 @@
 #include <set>
 #include "TcpConnection.h"
 #include "HttpSession.h"
+#include "Session.h"
 #include "H2Frame.h"
 #include "HPacker.h"
 #include "MyHttp2Stream.h"
@@ -35,33 +36,33 @@
 namespace DLNetwork {
 template<typename T>
 class _MyHttpServer;
-class MyHttp2Session : public std::enable_shared_from_this<MyHttp2Session> {
+
+class MyHttp2Session : public Session {
 public:
     friend class _MyHttpServer<MyHttp2Session>;
     friend class MyHttp2Stream;
+    
     typedef DLNetwork::MyHttp2Stream CallbackSession;
     enum {supportH2 = true};
+    
     typedef std::function<void(HTTP::Request& request, std::shared_ptr<CallbackSession> sess)> UrlHandler;
     typedef std::function<void(std::shared_ptr<MyHttp2Session> sess)> ClosedHandler;
-    MyHttp2Session(TcpConnection::Ptr&& conn);
+    MyHttp2Session(EventThread* thread):Session(thread), _closed(false){}
     ~MyHttp2Session();
+    
     void stop();
     void setClosedHandler(ClosedHandler handler) {
         _closedHandler = handler;
     }
-    //void addClosedHandler(ClosedHandler&& handler) {
-    //    _closeHandlers.push_back(std::move(handler));
-    //}
-    //void clearClosedHandler() {
-    //    _closeHandlers.clear();
-    //}
-    TcpConnection::Ptr connection() { return _conn; }
-    EventThread* thread() { return _conn->getThread(); }
-    void takeoverConn();
     std::string description() {
         return _conn->description();
     }
     int sendH2Frame(H2Frame* frame);
+
+    // 实现Session的虚函数
+    void onClosed() override;
+    bool onMessage(DLNetwork::Buffer* buf) override;
+    void onWriteDone() override;
 
     std::string version;
     std::string method;
@@ -71,9 +72,6 @@ private:
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
     }
-    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e);
-    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf);
-    void onWriteDone(TcpConnection::Ptr conn);
     void closeStream(std::shared_ptr<MyHttp2Stream> stream);
     void onStreamEnd(std::shared_ptr<MyHttp2Stream> stream);
     void refreshCloseTimer();
@@ -85,9 +83,7 @@ private:
         _initialWindowSize = size;
         // _curWindowSize = size;
     }
-    void updateWindowSize(uint32_t delta) {
-
-    }
+    void updateWindowSize(uint32_t delta) {}
     void setMaxFrameSize(uint32_t size) {
         _maxFrameSize = size;
     }
@@ -103,12 +99,11 @@ private:
     std::shared_ptr<MyHttp2Stream> getOrGenStream(uint32_t streamId);
     void connectionError(H2Error err);
     void healthCheck();
-    TcpConnection::Ptr _conn;
+
     bool _closed;
-    Timer* _closeTimer = nullptr;
     UrlHandler _handler;
     ClosedHandler _closedHandler;
-    //std::vector<ClosedHandler> _closeHandlers;
+    Timer* _closeTimer = nullptr;
 
     std::unordered_map<uint32_t, std::shared_ptr<MyHttp2Stream>> _streams;
     Buffer _headersBuf;
@@ -133,6 +128,6 @@ private:
     GoawayFrame _goawayFrame;
     WindowUpdateFrame _wndUpFrame;
     ContinuationFrame _contFrame;
-
 };
+
 } //DLNetwork

@@ -21,6 +21,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#include "TcpConnection.h"
+#include "Session.h"
 
 using namespace DLNetwork;
+
+DLNetwork::MyOut& operator<<(DLNetwork::MyOut& o, DLNetwork::Session& s) {
+    //o << *s._conn << "send:" << s._sendSize << " recv:" << s._recvSize << " lastActive:" << s._lastActiveTime;
+    return o;
+}

@@ -29,6 +29,11 @@
 
 using namespace DLNetwork;
 
+MyOut& operator<<(MyOut& o, INetAddress& addr) {
+    o << addr.description();
+    return o;
+}
+
 INetAddress INetAddress::getPeerAddress(SOCKET s) {
 	sockaddr_in6 myaddr;
 	socklen_t len = sizeof(myaddr);

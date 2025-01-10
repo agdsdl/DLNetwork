@@ -23,120 +23,25 @@
  */
 #pragma once
 
-#include "platform.h"
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <deque>
-#include "EventThread.h"
-#include "sockutil.h"
-#include "Buffer.h"
-#include "INetAddress.h"
-#include "MyLog.h"
-#include "SSLWrapper.h"
+#include "Connection.h"
 
 namespace DLNetwork {
-enum class ConnectEvent {
-    Established = 1,
-    Closed
-};
 
-class TcpConnection : public std::enable_shared_from_this<TcpConnection>
+class TcpConnection : public Connection
 {
 public:
-    using Ptr = std::shared_ptr<TcpConnection>;
+    //using Ptr = std::shared_ptr<TcpConnection>;
+    static Ptr createClient(EventThread* thread, INetAddress addr) {
+        return std::static_pointer_cast<Connection>(Connection::createClient<TcpConnection>(thread, addr));
+    }
     static Ptr create(EventThread* thread, SOCKET sock) {
-        auto t = thread ? thread : EventThreadPool::instance().getIdlestThread();
-        auto conn = std::shared_ptr<TcpConnection>(new TcpConnection(t, sock), [t](TcpConnection *ptr) {
-            if (t) {
-                t->dispatch([ptr]() { delete ptr; });
-            } else {
-                delete ptr;
-            }
-        });
-        return conn;
+        return std::static_pointer_cast<Connection>(Connection::create<TcpConnection>(thread, sock));
     }
-    typedef std::function<void(TcpConnection::Ptr conn, ConnectEvent e)> ConnectionCallback;
-    typedef std::function<bool(TcpConnection::Ptr conn, DLNetwork::Buffer*)> MessageCallback;
-    typedef std::function<void(TcpConnection::Ptr conn)> WritedCallback;
 
-    ~TcpConnection();
-#ifdef ENABLE_OPENSSL
-    void enableTls(std::string certFile, std::string keyFile, bool supportH2=true);
-#endif // ENABLE_OPENSSL
-    static Ptr createClient(EventThread* thread, INetAddress addr);
-    void startConnect();
-    void attach();
-    void setPeerAddr(INetAddress addr) {
-        _peerAddr = addr;
-    }
-    void setConnectCallback(ConnectionCallback cb) {
-        _connectionCb = cb;
-    }
-    void setOnMessage(MessageCallback cb) {
-        _messageCb = cb;
-    }
-    void setOnWriteDone(WritedCallback cb) {
-        _writedcb = cb;
-    }
-    void write(const char* buf, size_t size);
-    void close();
-    void reset();
-    EventThread* getThread() {
-        return _thread;
-    }
-    INetAddress& peerAddress() {
-        return _peerAddr;
-    }
-    INetAddress& selfAddress() {
-        return _selfAddr;
-    }
-    SOCKET sock() {
-        return _sock;
-    }
-    bool isSelfConnection() {
-        if (_selfAddr.isIP4() && _peerAddr.isIP4()) {
-            return _selfAddr.addr4().sin_addr.s_addr == _peerAddr.addr4().sin_addr.s_addr && _selfAddr.addr4().sin_port == _peerAddr.addr4().sin_port;
-        }
-        else if (_selfAddr.isIP6() && _peerAddr.isIP6()) {
-            return memcmp(_selfAddr.addr6().sin6_addr.s6_addr, _peerAddr.addr6().sin6_addr.s6_addr, 16) == 0 && _selfAddr.addr6().sin6_port == _peerAddr.addr6().sin6_port;
-        }
-        else {
-            return false;
-        }
-    }
-    std::string description();
-    void closeAfterWrite();
 protected:
-    TcpConnection(EventThread* thread, SOCKET sock);
 
-    void writeInner(const char* buf, size_t size);
-    void onEvent(SOCKET sock, int eventType);
-    bool handleRead(SOCKET sock);
-    bool handleWrite(SOCKET sock);
-    bool realSend();
-    void handleHangup(SOCKET sock);
-    void handleError(SOCKET sock);
-    void writeInThread(const char* buf, size_t size);
-
-    DLNetwork::Buffer _readBuf;
-    std::deque<DLNetwork::Buffer> _writeBuf;
-    SOCKET _sock;
-    EventThread* _thread;
-    ConnectionCallback _connectionCb;
-    MessageCallback _messageCb;
-    WritedCallback _writedcb;
-    bool _closing;
-    std::mutex _writeBufMutex;
-    std::unique_ptr<SSLWrapper> _ssl;
-    int _eventType;
-    INetAddress _peerAddr;
-    INetAddress _selfAddr;
-    bool _closeAfterWrite = false;
-    bool _clientMode = false;
-    bool _connected = false;
+    TcpConnection(EventThread* thread, SOCKET sock) : Connection(thread, sock) {}
+    friend class Connection;
 };
 
 } // DLNetwork
-
-DLNetwork::MyOut& operator<<(DLNetwork::MyOut& o, DLNetwork::TcpConnection& c);

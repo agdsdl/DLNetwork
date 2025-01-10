@@ -92,18 +92,19 @@ bool MyHttpClient::extractHostPortURI(const std::string& url, std::string& proto
     }
 }
 
-void DLNetwork::MyHttpClient::connect(std::string host, int port, bool tls, std::string certFile, std::string keyFile)
+void DLNetwork::MyHttpClient::connect(std::string host, int port, bool tls, std::string certFile)
 {
     EventThread* thread = EventThreadPool::instance().getIdlestThread();
     INetAddress address = INetAddress::fromDomainPort(host.c_str(), port);
     _connection = TcpConnection::createClient(thread, address);
-    if (tls) {
-        _connection->enableTls(certFile, keyFile, false);
-    }
+    _tls = tls;
+    _host = host;
+    _port = port;
+    _certFile = certFile;
     _connection->setOnMessage(std::bind(&MyHttpClient::onMessage, this, std::placeholders::_1, std::placeholders::_2));
     _connection->setOnWriteDone(std::bind(&MyHttpClient::onWriteDone, this, std::placeholders::_1));
-    _connection->setOnConnect(std::bind(&MyHttpClient::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
-    _connection->attach();
+    _connection->setConnectCallback(std::bind(&MyHttpClient::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
+	_connection->startConnect();
 
 }
 
@@ -138,6 +139,9 @@ void DLNetwork::MyHttpClient::close()
 void DLNetwork::MyHttpClient::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e)
 {
     if (e == ConnectEvent::Established) {
+        if (_tls) {
+            _connection->enableTlsClient(_host, _certFile);
+        }
         if (_onConnected) {
             _onConnected(*this);
         }

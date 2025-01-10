@@ -24,6 +24,7 @@
 #pragma once
 #include "platform.h"
 #include <string>
+#include "MyLog.h"
 
 namespace DLNetwork {
 
@@ -39,6 +40,7 @@ public:
 	//}
 	INetAddress() {
 		_addr4.sin_family = 0;
+		//_addr6.sin6_family = 0; // 与_addr4.sin_family是同一字段
 	}
 	INetAddress(const sockaddr_in& addr4) {
 		_addr4 = addr4;
@@ -62,10 +64,13 @@ public:
 		return _port;
 	}
 
-	bool isIP6() {
+	bool isValid() const {
+		return _addr4.sin_family != 0 || _addr6.sin6_family != 0;
+	}
+	bool isIP6() const {
 		return _addr6.sin6_family == AF_INET6;
 	}
-	bool isIP4() {
+	bool isIP4() const {
 		return _addr4.sin_family == AF_INET;
 	}
 	const sockaddr_in& addr4() const {
@@ -81,6 +86,24 @@ public:
 	static INetAddress fromIp4PortInNet(uint32_t ip, int port);
 	static INetAddress fromIp6Port(const char* ip, int port);
 	static INetAddress fromDomainPort(const char* domain, int port);
+	static INetAddress invalidAddress() {
+		return INetAddress();
+	}
+
+	bool operator==(const INetAddress& other) const {
+		if(isIP6() != other.isIP6()) return false;
+		if(isIP6()) {
+			const sockaddr_in6& a = addr6();
+			const sockaddr_in6& b = other.addr6();
+			return a.sin6_port == b.sin6_port && 
+				   memcmp(&a.sin6_addr, &b.sin6_addr, sizeof(a.sin6_addr)) == 0;
+		} else {
+			const sockaddr_in& a = addr4();
+			const sockaddr_in& b = other.addr4();
+			return a.sin_port == b.sin_port && 
+				   a.sin_addr.s_addr == b.sin_addr.s_addr;
+		}
+	}
 
 private:
 	void genDesc();
@@ -95,3 +118,5 @@ private:
 	int _port;
 };
 } //DLNetwork
+
+DLNetwork::MyOut& operator<<(DLNetwork::MyOut& o, DLNetwork::INetAddress& addr);

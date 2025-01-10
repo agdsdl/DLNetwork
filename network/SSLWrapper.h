@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include "Buffer.h"
+#include <queue>
 
 #ifdef ENABLE_OPENSSL
 #include <openssl/ssl.h>
@@ -11,6 +12,7 @@
 
 namespace DLNetwork {
 
+// 不支持多线程
 class SSLWrapper {
 public:
     SSLWrapper();
@@ -25,7 +27,7 @@ public:
     };
 
     bool init(const std::string& certFile, const std::string& keyFile, bool supportH2 = true);
-    bool initAsClient(const std::string& hostName = "");
+    bool initAsClient(const std::string& hostName = "", const std::string& certFile = "");
 
     /**
      * 收到密文后，调用此函数解密
@@ -43,7 +45,7 @@ public:
      * 设置解密后获取明文的回调
      * @param cb 回调对象
      */
-    void setOnDecData(const std::function<void(const char* data, size_t len)> &cb){
+    void setOnDecDataReceived(const std::function<void(const char* data, size_t len)> &cb){
         _onDecryptedData = cb;
     }
 
@@ -51,17 +53,12 @@ public:
      * 设置加密后获取密文的回调
      * @param cb 回调对象
      */
-    void setOnEncData(const std::function<void(const char* data, size_t len)> &cb){
+    void setOnEncData2Send(const std::function<void(const char* data, size_t len)> &cb){
         _onEncryptedData = cb;
     }
 
     // 客户端主动发起握手
-    bool startHandshake() {
-        if (_mode != Mode::Client || _handshakeFinished) {
-            return false;
-        }
-        return doHandshake();
-    }
+    bool startHandshake();
 
     void shutdown();
 private:
@@ -79,11 +76,10 @@ private:
     BIO* _wbio = nullptr;
 #endif
 
-    Buffer _encryptedBuf;  // 加密后的数据
-    Buffer _decryptedBuf;  // 解密后的数据
     bool _handshakeFinished = false;
     std::function<void(const char* data, size_t len)> _onEncryptedData;
     std::function<void(const char* data, size_t len)> _onDecryptedData;
+    std::queue<std::string> _sendBuffer;  // 发送缓存队列
 };
 
 } // namespace DLNetwork 

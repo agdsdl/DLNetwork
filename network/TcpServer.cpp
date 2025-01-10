@@ -29,29 +29,37 @@
 
 using namespace DLNetwork;
 
-TcpServer::TcpServer()
-{
+TcpServer::TcpServer() : Server() {
 }
 
-TcpServer::~TcpServer()
-{
-    stop();
+TcpServer::~TcpServer() {
 }
 
-bool TcpServer::start(EventThread* loop, sockaddr_in listenAddr, std::string name, bool reusePort)
-{
+bool TcpServer::start(EventThread* loop, INetAddress listenAddr, SessionCreator sessionCreator, bool reusePort) {
     _thread = loop;
     _listenAddr = listenAddr;
-    _name = std::move(name);
+    _sessionCreator = sessionCreator;
     _reusePort = reusePort;
 
-    _listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listenAddr.isIP4()) {
+        _listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    } else if (listenAddr.isIP6()) {
+        _listenSock = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    } else {
+        mCritical() << "TcpServer::start invalid listenAddr" << listenAddr.description();
+        return false;
+    }
     if (_listenSock == SOCKET_ERROR) {
         return false;
     }
     SockUtil::setNoBlocked(_listenSock, true);
     SockUtil::setReuseable(_listenSock, _reusePort);
-    int ret = bind(_listenSock, (sockaddr*)&listenAddr, sizeof(listenAddr));
+    int ret = 0;
+    if (listenAddr.isIP4()) {
+        ret = bind(_listenSock, (sockaddr*)&listenAddr.addr4(), sizeof(listenAddr.addr4()));
+    } else if (listenAddr.isIP6()) {
+        ret = bind(_listenSock, (sockaddr*)&listenAddr.addr6(), sizeof(listenAddr.addr6()));
+    }
     if (ret != 0) {
         mWarning() << "TcpServer bind error" << get_uv_errmsg();
         return false;
@@ -64,15 +72,17 @@ bool TcpServer::start(EventThread* loop, sockaddr_in listenAddr, std::string nam
     }
 
     _thread->addEvent(_listenSock, EventType::Read, std::bind(&TcpServer::onEvent, this, std::placeholders::_1, std::placeholders::_2));
+    std::weak_ptr<Server> weak_this = shared_from_this();
+    EventThreadPool::instance().forEach([weak_this](EventThread* thread) {
+        thread->addTimer(2000, [weak_this](void*) {
+            auto shared_this = weak_this.lock();
+            if (shared_this) {
+                shared_this->onManager();
+            }
+            return 2000;
+        }, nullptr);
+    });
     return true;
-}
-
-void TcpServer::stop()
-{
-    if (_listenSock >= 0) {
-        _thread->removeEvents(_listenSock);
-        myclose(_listenSock);
-    }
 }
 
 void TcpServer::onEvent(SOCKET sock, int eventType) {
@@ -82,9 +92,15 @@ void TcpServer::onEvent(SOCKET sock, int eventType) {
         socklen_t nLen = sizeof(sockaddr_in);
         SOCKET fsock = ::accept(sock, (sockaddr*)&clientAddr, &nLen);
         if (fsock != -1) {
-            auto conn = TcpConnection::create(_thread, fsock);
-            if (_connectionCb) {
-                _connectionCb(std::move(conn));
+            if (_sessionCreator) {
+                auto session = _sessionCreator();
+                auto conn = TcpConnection::create(session->thread(), fsock);
+                conn->setConnectCallback(std::bind(&TcpServer::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
+                _conn_session[conn] = session;
+                session->takeoverConn(conn);
+            }
+            else {
+                destroy();
             }
         }
         else {

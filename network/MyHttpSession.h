@@ -28,12 +28,13 @@
 #include <set>
 #include "TcpConnection.h"
 #include "HttpSession.h"
-
+#include "Session.h"
 
 namespace DLNetwork {
 template<typename T>
 class _MyHttpServer;
-class MyHttpSession : public std::enable_shared_from_this<MyHttpSession> {
+
+class MyHttpSession : public Session {
 public:
     friend class _MyHttpServer<MyHttpSession>;
 
@@ -42,18 +43,12 @@ public:
 
     typedef std::function<void(HTTP::Request& request, std::shared_ptr<CallbackSession> sess)> UrlHandler;
     typedef std::function<void(std::shared_ptr<MyHttpSession> sess)> ClosedHandler;
-    MyHttpSession(std::unique_ptr<TcpConnection>&& conn);
+    MyHttpSession(EventThread* thread):Session(thread){}
     ~MyHttpSession();
     void stop();
     void setClosedHandler(ClosedHandler handler) {
         _closedHandler = handler;
     }
-    //void addClosedHandler(ClosedHandler&& handler) {
-    //    _closeHandlers.push_back(std::move(handler));
-    //}
-    //void clearClosedHandler() {
-    //    _closeHandlers.clear();
-    //}
 
     void response(std::string content);
     void response(int code, std::string content);
@@ -62,35 +57,29 @@ public:
     void beginFile(std::string fname, std::string contentType);
     void writeFile(std::string content);
     void endFile();
-    void closeAfterWrite() {
-        _conn->closeAfterWrite();
-    }
-    TcpConnection::Ptr connection() { return _conn; }
-    EventThread* thread() { return _conn->getThread(); }
-    void takeoverConn();
-    std::string description() {
-        return _conn->description();
-    }
+    
+    // 实现Session的虚函数
+    void onClosed() override;
+    bool onMessage(DLNetwork::Buffer* buf) override;
+    void onWriteDone() override;
+
     std::string version;
     std::string method;
     std::string uri;
     std::map<std::string, std::string> urlParams;
+
 private:
     std::string makeupResponse(int code, const std::string& content);
     void setUrlHandler(UrlHandler handler) {
         _handler = handler;
     }
-    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e);
-    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf);
-    void onWriteDone(TcpConnection::Ptr conn);
-
     void refreshCloseTimer();
     void send(const char* buf, size_t size);
-    TcpConnection::Ptr _conn;
-    bool _closed;
+
+    bool _closed = false;
     UrlHandler _handler;
     ClosedHandler _closedHandler;
-    //std::vector<ClosedHandler> _closeHandlers;
     Timer* _closeTimer = nullptr;
 };
+
 } //DLNetwork

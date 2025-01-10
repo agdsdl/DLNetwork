@@ -32,9 +32,6 @@ using namespace DLNetwork;
 
 const char HTTP2_PREFACE[] = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-MyHttp2Session::MyHttp2Session(TcpConnection::Ptr&& conn) :_conn(std::move(conn)), _closed(false) {
-}
-
 MyHttp2Session::~MyHttp2Session() {
     stop();
     mInfo() << "~MyHttp2Session" << ptr2string(this);
@@ -52,32 +49,22 @@ void MyHttp2Session::stop()
     }
 }
 
-
-void MyHttp2Session::takeoverConn() {
-    //_conn->setConnectCallback(std::bind(&MyHttp2Session::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
-    _conn->setOnMessage(std::bind(&MyHttp2Session::onMessage, this, std::placeholders::_1, std::placeholders::_2));
-    _conn->setOnWriteDone(std::bind(&MyHttp2Session::onWriteDone, this, std::placeholders::_1));
-    _conn->attach();
-}
-
-void MyHttp2Session::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e) {
-    if (e == ConnectEvent::Closed) {
-        _closed = true;
-        //for (auto& onclose: _closeHandlers) {
-        //    stop();
-        //    onclose(shared_from_this());
-        //}
-        if (_closedHandler) {
-            _closedHandler(shared_from_this());
-        }
-        _closedHandler = nullptr;
-        for (auto& s : _streams) {
-            s.second->stop();
-        }
+void MyHttp2Session::onClosed() {
+    _closed = true;
+    //for (auto& onclose: _closeHandlers) {
+    //    stop();
+    //    onclose(shared_from_this());
+    //}
+    if (_closedHandler) {
+        _closedHandler(std::static_pointer_cast<MyHttp2Session>(shared_from_this()));
+    }
+    _closedHandler = nullptr;
+    for (auto& s : _streams) {
+        s.second->stop();
     }
 }
 
-bool MyHttp2Session::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
+bool MyHttp2Session::onMessage(DLNetwork::Buffer* buf) {
     if (_state == 0) {
         if (buf->readableBytes() < sizeof(HTTP2_PREFACE)-1) {
             return true; // wait full preface
@@ -299,7 +286,7 @@ void MyHttp2Session::closeStream(std::shared_ptr<MyHttp2Stream> stream)
 void MyHttp2Session::onStreamEnd(std::shared_ptr<MyHttp2Stream> stream)
 {
     mInfo() << "MyHttp2Session::onStreamEnd" << stream->streamId();
-    std::weak_ptr<MyHttp2Session> weakThis(shared_from_this());
+    std::weak_ptr<MyHttp2Session> weakThis(std::static_pointer_cast<MyHttp2Session>(shared_from_this()));
     thread()->dispatch([weakThis, stream]() {
         if (auto strongThis = weakThis.lock()) {
             strongThis->closeStream(stream);
@@ -307,7 +294,7 @@ void MyHttp2Session::onStreamEnd(std::shared_ptr<MyHttp2Stream> stream)
     });
 }
 
-void MyHttp2Session::onWriteDone(TcpConnection::Ptr conn) {
+void MyHttp2Session::onWriteDone() {
 }
 
 void MyHttp2Session::send(const char* buf, size_t size)
@@ -315,7 +302,7 @@ void MyHttp2Session::send(const char* buf, size_t size)
     if (_closed) {
         return;
     }
-    _conn->write(buf, size);
+    Session::send(buf, size);
 }
 
 H2Frame* MyHttp2Session::parseFrame(const FrameHeader& hdr, const uint8_t* payload)
@@ -448,19 +435,30 @@ void MyHttp2Session::connectionError(H2Error err)
 }
 
 void MyHttp2Session::refreshCloseTimer() {
-    std::weak_ptr<MyHttp2Session> weakThis(shared_from_this());
-    thread()->dispatch([weakThis]() {
+    std::weak_ptr<MyHttp2Session> weakThis(std::static_pointer_cast<MyHttp2Session>(shared_from_this()));
+    if (_closeTimer) {
+        thread()->delTimer(_closeTimer);
+        _closeTimer = nullptr;
+    }
+    _closeTimer = thread()->addTimer(30000, [weakThis](void*) {
         if (auto strongThis = weakThis.lock()) {
-            if (strongThis->_closeTimer) {
-                strongThis->thread()->delTimerInLoop(strongThis->_closeTimer);
-                strongThis->_closeTimer = nullptr;
-            }
-            strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
-                if (auto strongThis = weakThis.lock()) {
-                    strongThis->_conn->closeAfterWrite();
-                }
-                return 0;
-                });
+            strongThis->_conn->closeAfterWrite();
         }
+        return 0;
     });
+
+    // thread()->dispatch([weakThis]() {
+    //     if (auto strongThis = weakThis.lock()) {
+    //         if (strongThis->_closeTimer) {
+    //             strongThis->thread()->delTimerInLoop(strongThis->_closeTimer);
+    //             strongThis->_closeTimer = nullptr;
+    //         }
+    //         strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
+    //             if (auto strongThis = weakThis.lock()) {
+    //                 strongThis->_conn->closeAfterWrite();
+    //             }
+    //             return 0;
+    //             });
+    //     }
+    // });
 }

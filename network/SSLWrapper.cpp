@@ -88,7 +88,7 @@ bool SSLWrapper::init(const std::string& certFile, const std::string& keyFile, b
 #endif
 }
 
-bool SSLWrapper::initAsClient(const std::string& hostName) {
+bool SSLWrapper::initAsClient(const std::string& hostName, const std::string& certFile) {
 #ifdef ENABLE_OPENSSL
     _mode = Mode::Client;
     _ctx = SSL_CTX_new(TLS_client_method());
@@ -99,18 +99,43 @@ bool SSLWrapper::initAsClient(const std::string& hostName) {
 
     // 设置客户端选项
     SSL_CTX_set_verify(_ctx, SSL_VERIFY_NONE, NULL);
-    SSL_CTX_set_options(_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
+    SSL_CTX_set_min_proto_version(_ctx, TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(_ctx, TLS1_3_VERSION);
+    SSL_CTX_set_options(_ctx, SSL_OP_NO_RENEGOTIATION);
+
+    if (!certFile.empty()) {
+        SSL_CTX_load_verify_locations(_ctx, certFile.c_str(), NULL);
+    }
 
     _ssl = SSL_new(_ctx);
+    if (!_ssl) {
+        mCritical() << "SSL_new failed";
+        return false;
+    }
+
+    // 设置SNI
     if (!hostName.empty()) {
-        SSL_set_tlsext_host_name(_ssl, hostName.c_str());
+        //if (!SSL_set_tlsext_host_name(_ssl, hostName.c_str())) {
+        //    mWarning() << "Failed to set SNI hostname";
+        //    ERR_print_errors_fp(stderr);
+        //} else {
+        //    mInfo() << "Set SNI hostname:" << hostName;
+        //}
     }
 
     _rbio = BIO_new(BIO_s_mem());
     _wbio = BIO_new(BIO_s_mem());
+    if (!_rbio || !_wbio) {
+        mCritical() << "BIO_new failed";
+        return false;
+    }
     
     SSL_set_bio(_ssl, _rbio, _wbio);
     SSL_set_connect_state(_ssl);  // 客户端使用connect state
+    
+    // 初始化完成后立即开始握手
+    // doHandshake();
+    // handleOut();  // 确保发送第一个Client Hello
     
     return true;
 #else
@@ -129,7 +154,7 @@ int SSLWrapper::onRecvEncrypted(const char* data, size_t len) {
             mWarning() << "BIO_write failed";
             return w;
         }
-        else{
+        else {
             data += w;
             needRead -= w;
         }
@@ -164,18 +189,21 @@ int SSLWrapper::onRecvEncrypted(const char* data, size_t len) {
 int SSLWrapper::sendUnencrypted(const char* data, size_t len) {
 #ifdef ENABLE_OPENSSL
     if (!_handshakeFinished) {
-        mWarning() << "SSL handshake not finished";
+        // 握手未完成，将数据存入缓存
+        _sendBuffer.push(std::string(data, len));
+        mWarning() << "SSL handshake not finished, data cached";
         doHandshake();
-        return -1;
+        return len;  // 返回完整长度表示数据已被接受（虽然是缓存）
     }
+
+    // 原有的发送逻辑
     int needWrite = len;
-    do
-    {
+    do {
         int written = SSL_write(_ssl, data, needWrite);
         if (written <= 0) {
             handleSSLError(written);
         }
-        else{
+        else {
             data += written;
             needWrite -= written;
         }
@@ -204,6 +232,14 @@ bool SSLWrapper::doHandshake() {
     else {
         mInfo() << "SSL handshake finished";
         _handshakeFinished = true;
+        
+        // 握手完成后，发送缓存的数据
+        while (!_sendBuffer.empty()) {
+            const std::string& data = _sendBuffer.front();
+            sendUnencrypted(data.c_str(), data.length());
+            _sendBuffer.pop();
+        }
+
         // 客户端验证服务器证书
         if (_mode == Mode::Client) {
             X509* cert = SSL_get_peer_certificate(_ssl);
@@ -271,6 +307,13 @@ void SSLWrapper::shutdown() {
         _ctx = nullptr;
     }
 #endif
+}
+
+bool SSLWrapper::startHandshake() {
+    if (_mode != Mode::Client || _handshakeFinished || SSL_is_init_finished(_ssl)) {
+        return false;
+    }
+    return doHandshake();
 }
 
 } // namespace DLNetwork 

@@ -31,9 +31,6 @@
 
 using namespace DLNetwork;
 
-DLNetwork::MyHttpSession::MyHttpSession(std::unique_ptr<TcpConnection>&& conn) :_conn(std::move(conn)), _closed(false) {
-}
-
 DLNetwork::MyHttpSession::~MyHttpSession() {
     stop();
     mInfo() << "~MyHttpSession" << ptr2string(this);
@@ -181,29 +178,20 @@ void MyHttpSession::endFile() {
     _conn->closeAfterWrite();
 }
 
-void MyHttpSession::takeoverConn() {
-    //_conn->setConnectCallback(std::bind(&MyHttpSession::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
-    _conn->setOnMessage(std::bind(&MyHttpSession::onMessage, this, std::placeholders::_1, std::placeholders::_2));
-    _conn->setOnWriteDone(std::bind(&MyHttpSession::onWriteDone, this, std::placeholders::_1));
-    _conn->attach();
-}
-
-void MyHttpSession::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e) {
-    if (e == ConnectEvent::Closed) {
-        _closed = true;
-        //for (auto& onclose: _closeHandlers) {
-        //    stop();
-        //    onclose(shared_from_this());
-        //}
-        //_closeHandlers.clear();
-        if (_closedHandler) {
-            _closedHandler(shared_from_this());
-        }
-        _closedHandler = nullptr;
+void MyHttpSession::onClosed() {
+    _closed = true;
+    if (_closeTimer) {
+        thread()->delTimer(_closeTimer);
+        _closeTimer = nullptr;
     }
+
+    if (_closedHandler) {
+        _closedHandler(std::static_pointer_cast<MyHttpSession>(shared_from_this()));
+    }
+    _closedHandler = nullptr;
 }
 
-bool MyHttpSession::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
+bool MyHttpSession::onMessage(DLNetwork::Buffer* buf) {
     std::string inbuf;
     //先把所有数据都取出来
     inbuf.append(buf->peek(), buf->readableBytes());
@@ -217,7 +205,7 @@ bool MyHttpSession::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
     HTTP::Request req;
     HTTP::Request::ErrorCode ecode = req.deserialize(inbuf.c_str(), inbuf.length());
     if (ecode != HTTP::Request::ErrorCode::OK) {
-        conn->close();
+        _conn->close();
         return false;
     }
 
@@ -229,18 +217,18 @@ bool MyHttpSession::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
     }
 
     if (_handler) {
-        _handler(req, shared_from_this());
+        _handler(req, std::static_pointer_cast<MyHttpSession>(shared_from_this()));
     }
 
     bool close = false;
     if (req.version == HTTP::Version::HTTP_1_0) {
-        conn->closeAfterWrite();
+        _conn->closeAfterWrite();
         close = true;
     }
     if (req.version == HTTP::Version::HTTP_1_1) {
         auto iter = req.headers.find("Connection");
         if (iter != req.headers.end() && iter->second == "close") {
-            conn->closeAfterWrite();
+            _conn->closeAfterWrite();
             close = true;
         }
     }
@@ -251,29 +239,41 @@ bool MyHttpSession::onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
     return true;
 }
 
-void MyHttpSession::onWriteDone(TcpConnection::Ptr conn) {
+void MyHttpSession::onWriteDone() {
+    // 可以为空实现
 }
 
 void MyHttpSession::refreshCloseTimer() {
-    std::weak_ptr<MyHttpSession> weakThis(shared_from_this());
-    thread()->dispatch([weakThis]() {
+    std::weak_ptr<MyHttpSession> weakThis(std::static_pointer_cast<MyHttpSession>(shared_from_this()));
+    if (_closeTimer) {
+        thread()->delTimer(_closeTimer);
+        _closeTimer = nullptr;
+    }
+    _closeTimer = thread()->addTimer(30000, [weakThis](void*) {
         if (auto strongThis = weakThis.lock()) {
-            if (strongThis->_closeTimer) {
-                strongThis->thread()->delTimerInLoop(strongThis->_closeTimer);
-                strongThis->_closeTimer = nullptr;
-            }
-            strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
-                if (auto strongThis = weakThis.lock()) {
-                    strongThis->_conn->closeAfterWrite();
-                }
-                return 0;
-                });
+            strongThis->_conn->closeAfterWrite();
         }
+        return 0;
+    });
 
-        });
+    // thread()->dispatch([weakThis]() {
+    //     if (auto strongThis = weakThis.lock()) {
+    //         if (strongThis->_closeTimer) {
+    //             strongThis->thread()->delTimerInLoop(strongThis->_closeTimer);
+    //             strongThis->_closeTimer = nullptr;
+    //         }
+    //         strongThis->_closeTimer = strongThis->thread()->addTimerInLoop(30000, [weakThis](void*) {
+    //             if (auto strongThis = weakThis.lock()) {
+    //                 strongThis->_conn->closeAfterWrite();
+    //             }
+    //             return 0;
+    //             });
+    //     }
+
+    //     });
 }
 
 void DLNetwork::MyHttpSession::send(const char* buf, size_t size)
 {
-    _conn->write(buf, size);
+    Session::send(buf, size);
 }

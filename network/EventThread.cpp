@@ -188,6 +188,19 @@ void EventThread::dispatch(TASK_FUN &&task, bool insertFront, bool tryNoQueue) {
 	return;
 }
 
+Timer* EventThread::addTimer(unsigned int ms, Timer::TIMER_FUN task, void* arg) {
+	if (isCurrentThread()) {
+		return addTimerInLoop(ms, std::move(task), arg);
+	}
+	else {
+		Timer* timer = new Timer(ms, std::move(task), arg);
+		dispatch([this, timer]() {
+			_timerMan.addTimer(timer);
+		});
+		return timer;
+	}
+}
+
 Timer* EventThread::addTimerInLoop(unsigned int ms, Timer::TIMER_FUN task, void* arg) {
 	assert(isCurrentThread());
 	return _timerMan.addTimer(ms, std::move(task), arg);
@@ -203,16 +216,17 @@ void EventThread::delTimer(Timer* t) {
 		delTimerInLoop(t);
 	}
 	else {
-		bool done = false;
-		dispatch([this, t, &done]() {
+		t->cancel();
+		//bool done = false;
+		dispatch([this, t]() {
 			delTimerInLoop(t);
-			std::unique_lock<std::mutex> lock(_timerMutex);
-			done = true;
-			lock.unlock();
-			_timerCV.notify_all();
+			//std::unique_lock<std::mutex> lock(_timerMutex);
+			//done = true;
+			//lock.unlock();
+			//_timerCV.notify_all();
 			});
-		std::unique_lock<std::mutex> lk(_timerMutex);
-		_timerCV.wait(lk, [this, &done] {return done; });
+		// std::unique_lock<std::mutex> lk(_timerMutex);
+		// _timerCV.wait(lk, [this, &done] {return done; });
 	}
 }
 
@@ -378,6 +392,13 @@ void EventThreadPool::fini()
 	}
 	_threads.clear();
 	delete _debugThread;
+}
+
+void EventThreadPool::forEach(const std::function<void(EventThread* )> &cb)
+{
+	for (auto& t : _threads) {
+		cb(t);
+	}
 }
 
 EventThreadPool& EventThreadPool::instance()

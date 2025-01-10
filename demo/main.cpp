@@ -16,7 +16,9 @@
 #include "TcpServer.h"
 #include "TcpClient.h"
 #include "TcpConnection.h"
-
+#include "TlsTest.h"
+#include "UdpTest.h"
+#include "TcpTest.h"
 using namespace DLNetwork;
 
 bool InitSocket()
@@ -42,119 +44,21 @@ bool InitSocket()
     return true;
 }
 
-class Server {
-public:
-    bool start() {
-        sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = ADDR_ANY;
-        addr.sin_port = DLNetwork::hostToNetwork16(9999);
 
-        _tcpServer.setConnectionAcceptCallback(std::bind(&Server::onConnection, this, std::placeholders::_1));
-        return _tcpServer.start(EventThreadPool::instance().getIdlestThread(), addr, "myTcpServer", true);
-    }
-    ~Server() {
-        _tcpServer.stop();
-    }
-private:
-    void onConnection(TcpConnection::Ptr&& conn) {
-        conn->setConnectCallback(std::bind(&Server::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
-        conn->setOnMessage(std::bind(&Server::onMessage, this, std::placeholders::_1, std::placeholders::_2));
-        conn->setOnWriteDone(std::bind(&Server::onWriteDone, this, std::placeholders::_1));
-        conn->attach();
-
-        std::lock_guard<std::mutex> l(_mutex);
-        _connetions.insert(conn);
-    }
-
-    void onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e) {
-        if (e == ConnectEvent::Closed) {
-            {
-                std::lock_guard<std::mutex> l(_mutex);
-                _connetions.erase(conn);
-            }
-        }
-    }
-
-    bool onMessage(TcpConnection::Ptr conn, DLNetwork::Buffer* buf) {
-        std::string inbuf;
-        inbuf.append(buf->peek(), buf->readableBytes());
-        buf->retrieveAll();
-        mInfo() << "serverGot:" << inbuf;
-        return true;
-    }
-
-    void onWriteDone(TcpConnection::Ptr conn) {
-    }
-
-    std::set<TcpConnection::Ptr> _connetions;
-    TcpServer _tcpServer;
-    std::mutex _mutex;
-};
-
-class Client {
-public:
-    bool start() {
-        _client = new TcpClient(EventThreadPool::instance().getIdlestThread(), INetAddress::fromIp4Port("127.0.0.1", 9999), "myclient");
-        _client->setConnectCallback(std::bind(&Client::onCliChange, this, std::placeholders::_1, std::placeholders::_2));
-        _client->setOnConnectError(std::bind(&Client::onCliError, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
-        _client->setOnMessage(std::bind(&Client::onCliMessage, this, std::placeholders::_1, std::placeholders::_2));
-        return _client->startConnect();
-    }
-    void write(const char *buf, size_t size) {
-        _client->write(buf, size);
-    }
-    ~Client() {
-        _client = nullptr;
-    }
-private:
-	void onCliChange(TcpClient& cli2, ConnectEvent e) {
-        if (e == ConnectEvent::Established) {
-            mInfo() << "input text to send, input quit to quit";
-        }
-        else if (e == ConnectEvent::Closed) {
-        }
-	}
-
-	bool onCliMessage(TcpClient& cli2, Buffer* buf) {
-        std::string inbuf;
-        inbuf.append(buf->peek(), buf->readableBytes());
-        buf->retrieveAll();
-        mInfo() << "clientGot:" << inbuf;
-        return true;
-	}
-
-	void onCliError(TcpClient& cli2, SOCKET sock, int ecode, std::string eMsg) {
-        mInfo() << "clientError:" << eMsg;
-	}
-
-    TcpClient* _client;
-};
 
 int main(int argc, char** argv) {
     InitSocket();
-
+    setMyLogLevel(MyLogLevel::Debug);
     EventThreadPool::instance().init(1);
-    Server s;
-    s.start();
 
-    Client c;
-    c.start();
-    char buf[8*1024];
-    do {
-        char* r = gets_s(buf, sizeof(buf));
-        if (!r) {
-            break;
-        }
-        if (strcmp(buf, "quit") == 0) {
-            break;
-        }
-        mInfo() << "clientSend:" << buf;
-        c.write(buf, strlen(buf));
-    } while (true);
+    // 取消注释以测试不同功能
+    testTcp();  // 添加TCP测试选项
+    testUdp();
+    testTls();
 
 #ifdef WIN32
     WSACleanup();
 #endif
+
     return 0;
 }

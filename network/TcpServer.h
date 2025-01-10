@@ -23,38 +23,23 @@
  */
 #pragma once
 
-#include <functional>
-#include <string.h>
-#include <memory>
-#include "platform.h"
-#include "Buffer.h"
-#include "EventThread.h"
-#include "TcpConnection.h"
+#include "Server.h"
 
 namespace DLNetwork {
-class TcpServer
-{
+
+class TcpServer : public Server {
 public:
-    TcpServer();
-    ~TcpServer();
-    typedef std::function<void(TcpConnection::Ptr&& conn)> ConnectionAcceptCallback;
-
-
-    bool start(EventThread* loop, sockaddr_in listenAddr, std::string name, bool reusePort = true);
-    void stop();
-
-    void setConnectionAcceptCallback(const ConnectionAcceptCallback& cb) {
-        _connectionCb = cb;
+    using Ptr = std::shared_ptr<TcpServer>;
+    static Ptr create() {
+        return std::shared_ptr<TcpServer>(new TcpServer());
     }
-    EventThread* thread() { return _thread; }
-private:
-    void onEvent(SOCKET sock, int eventType);
+    ~TcpServer();
 
-    ConnectionAcceptCallback _connectionCb;
-    sockaddr_in _listenAddr;
-    SOCKET _listenSock;
-    EventThread* _thread;
-    std::string _name;
-    bool _reusePort;
+    virtual bool start(EventThread* loop, INetAddress listenAddr, SessionCreator sessionCreator, bool reusePort=true) override;
+    
+private:
+    TcpServer();
+    void onEvent(SOCKET sock, int eventType);
 };
-} // DLNetwork
+
+} // namespace DLNetwork

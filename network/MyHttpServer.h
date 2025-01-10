@@ -48,7 +48,8 @@ public:
     ~_MyHttpServer() {
 
     }
-    bool start(const char* ip, int port, const char* certFile = nullptr, const char* keyFile = nullptr) {
+    bool start(EventThread* thread,INetAddress listenAddr, const char* certFile = nullptr, const char* keyFile = nullptr) {
+        _thread = thread;
         if (certFile) {
             _certFile = certFile;
         }
@@ -56,54 +57,19 @@ public:
             _keyFile = keyFile;
         }
 
-        _thread = EventThreadPool::instance().getIdlestThread();
-        sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = DLNetwork::hostToNetwork16(port);
-
-        if (::inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
-            mCritical() << "_MyHttpServer inet_pton failed" << get_uv_errmsg();
-            return false;
-        }
-        _tcpServer.setConnectionAcceptCallback(std::bind(&_MyHttpServer::onConnection, this, std::placeholders::_1));
-        return _tcpServer.start(_thread, addr, "myhttpserver", true);
+        return _tcpServer.start(_thread, listenAddr, [this](){
+            auto sess = std::make_shared<SESSION>(_thread);
+            sess->setSSLCert(_certFile, _keyFile, SESSION::supportH2);
+            return sess;
+        }, true);
     }
     void setHandler(UrlHandler handler) {
         _handler = handler;
     }
     EventThread* thread() {
-        return _thread;
+        return _tcpServer.thread();
     }
 private:
-    void onConnection(std::unique_ptr<TcpConnection>&& conn) {
-        TcpConnection* pConn = conn.get();
-        auto session = std::make_shared<SESSION>(std::move(conn));
-#ifdef ENABLE_OPENSSL
-        if (_certFile.size()) {
-            pConn->enableTls(_certFile, _keyFile, SESSION::supportH2);
-        }
-#endif // ENABLE_OPENSSL
-        session->setUrlHandler(std::bind(&_MyHttpServer::urlHanlder, this, std::placeholders::_1, std::placeholders::_2));
-        //session->addClosedHandler(std::bind(&_MyHttpServer::closedHandler, this, std::placeholders::_1));
-        pConn->setConnectCallback(std::bind(&_MyHttpServer::onConnectionChange, this, std::placeholders::_1, std::placeholders::_2));
-        _conn_session[pConn] = session;
-        session->takeoverConn();
-    }
-    void onConnectionChange(TcpConnection& conn, ConnectEvent e) {
-        if (e == ConnectEvent::Closed) {
-            _conn_session[&conn]->onConnectionChange(conn, e);
-            _conn_session.erase(&conn);
-        }
-    }
-    //bool onMessage(TcpConnection& conn, DLNetwork::Buffer* buf);
-    //void onWriteDone(TcpConnection& conn);
-
-    //void closedHandler(std::shared_ptr<SESSION> sess) {
-    //    // don't self delete
-    //    _thread->dispatch([this, sess]() {
-    //        _conn_session.erase(&sess->connection());
-    //        });
-    //}
     void urlHanlder(HTTP::Request& request, std::shared_ptr<CallbackSession> sess) {
         if (request.method == DLNetwork::HTTP::Method::HTTP_OPTIONS) {
             sess->response("");

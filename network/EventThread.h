@@ -71,8 +71,7 @@ public:
 	void removeEvents(int fd);
 	int eventCount() { return _event_map.size(); }
 	void dispatch(TASK_FUN&& task, bool insertFront = false, bool tryNoQueue = false);
-	Timer* addTimerInLoop(unsigned int ms, Timer::TIMER_FUN task, void* arg = NULL);
-	bool delTimerInLoop(Timer* t);
+	Timer* addTimer(unsigned int ms, Timer::TIMER_FUN task, void* arg = NULL);
 	void delTimer(Timer* t);
 	void delay(unsigned int ms, Timer::TIMER_FUN&& task, void* arg = NULL);
 	bool isCurrentThread() {
@@ -82,6 +81,9 @@ public:
 
 protected:
 	//uint64_t processExpireTasks();
+	Timer* addTimerInLoop(unsigned int ms, Timer::TIMER_FUN task, void* arg = NULL);
+	bool delTimerInLoop(Timer* t);
+
 	void loopOnce();
 	void runloop();
 	void onPipeEvent();
@@ -122,6 +124,7 @@ public:
 
 	void init(int poolSize = 4);
 	void fini();
+	void forEach(const std::function<void(EventThread*)>& cb);
 	EventThread* getIdlestThread();
 	EventThread* debugThread() {
 		return _debugThread;

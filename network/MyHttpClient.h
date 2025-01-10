@@ -53,7 +53,7 @@ public:
     void setOnClose(CloseCallback cb) { _onClose = std::move(cb); }
     //void startRequest(std::string method, std::string url, std::string body);
     static bool extractHostPortURI(const std::string& url, std::string& protocol, std::string& host, std::string& port, std::string& uri);
-    void connect(std::string host, int port, bool tls,std::string certFile, std::string keyFile);
+    void connect(std::string host, int port, bool tls,std::string certFile);
     void sendRequest(std::string method, std::string uri, std::string body, std::string contentType);
     void close();
 private:
@@ -72,6 +72,8 @@ private:
     CloseCallback _onClose;
     ConnectedCallback _onConnected;
     bool _closed = false;
+    bool _connected = false;
+    bool _tls = false;
 };
 
 } //DLNetwork

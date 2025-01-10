@@ -21,6 +21,25 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-#include "TcpConnection.h"
+#pragma once
 
-using namespace DLNetwork;
+#include "Connection.h"
+
+namespace DLNetwork {
+
+class UdpConnection : public Connection
+{
+public:
+    static Ptr create(EventThread* thread, INetAddress peerAddr, INetAddress localAddr) {
+        return std::static_pointer_cast<Connection>(Connection::createClient<UdpConnection>(thread, peerAddr, localAddr));
+    }
+    static Ptr create(EventThread* thread, SOCKET sock) {
+        return std::static_pointer_cast<Connection>(Connection::create<UdpConnection>(thread, sock));
+    }
+
+protected:
+    UdpConnection(EventThread* thread, SOCKET sock) : Connection(thread, sock) {}
+    friend class Connection;
+};
+
+} // DLNetwork 

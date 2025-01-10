@@ -46,8 +46,8 @@ std::string TcpClient::description() {
     o << " "<< name();
     return o.str();;
 }
-TcpClient::TcpClient(EventThread* loop, const INetAddress& serverAddr, const std::string& name):
-	_serverAddr(serverAddr), _thread(loop), _name(name)
+TcpClient::TcpClient(EventThread* loop, const INetAddress& serverAddr, const std::string& name, bool enableTls):
+	_serverAddr(serverAddr), _thread(loop), _name(name), _enableTls(enableTls)
 {
 }
 
@@ -163,6 +163,9 @@ void TcpClient::handleWrite(SOCKET sock) {
     _conn->setOnMessage(std::bind(&TcpClient::messageCallback, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnWriteDone(std::bind(&TcpClient::writedCallback, this, std::placeholders::_1));
     _conn->attach();
+    if (_enableTls) {
+        _conn->enableTlsClient("", "");
+    }
     if (_conn->isSelfConnection()) {
         mCritical() << "TcpClient self connection:" << *_conn.get();
         _conn.reset();

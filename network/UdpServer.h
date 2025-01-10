@@ -1,39 +1,47 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2019-2022 agdsdl <agdsdl@sina.com.cn>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 #pragma once
 
-#include <functional>
-#include <string.h>
-#include <memory>
-#include "platform.h"
-#include "Buffer.h"
-#include "EventThread.h"
-#include "INetAddress.h"
+#include "Server.h"
 
 namespace DLNetwork {
-class UdpServer
-{
+
+class UdpServer : public Server {
 public:
-    UdpServer();
-    ~UdpServer();
-    typedef std::function<void(SOCKET sock, INetAddress& clientAddr, char* data, int size)> RecvDataCallback;
-
-
-    bool start(EventThread* loop, INetAddress listenAddr, std::string name, bool reusePort = true);
-    void stop();
-
-    void setRecvDataCallback(const RecvDataCallback& cb) {
-        _dataCb = cb;
+    using Ptr = std::shared_ptr<UdpServer>;
+    static Ptr create() {
+        return std::shared_ptr<UdpServer>(new UdpServer());
     }
+    ~UdpServer();
 
-    EventThread* thread() { return _thread; }
-    SOCKET sock() { return _listenSock; }
+    virtual bool start(EventThread* loop, INetAddress listenAddr, SessionCreator sessionCreator, bool reusePort=true) override;
+
 private:
-    void onEvent(SOCKET sock, int eventType);
+    UdpServer();
 
-    RecvDataCallback _dataCb;
-    INetAddress _listenAddr;
-    SOCKET _listenSock;
-    EventThread* _thread;
-    std::string _name;
-    bool _reusePort;
+    void onManager();
+    void onEvent(SOCKET sock, int eventType);
 };
-} // DLNetwork
+
+} // namespace DLNetwork 
