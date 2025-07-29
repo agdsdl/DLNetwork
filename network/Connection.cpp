@@ -200,6 +200,7 @@ void Connection::attach() {
 void Connection::writeInner(const char* buf, size_t size)
 {
     if (size) {
+#ifdef ENABLE_OPENSSL
         if (_ssl) {
             if (_thread->isCurrentThread()) {
                 _ssl->sendUnencrypted(buf, size);
@@ -211,18 +212,19 @@ void Connection::writeInner(const char* buf, size_t size)
                     }
                 });
             }
-        } else {
-            DLNetwork::Buffer newBuf;
-            newBuf.append(buf, size);
-            
-            {
-                std::lock_guard<std::mutex> lock(_writeBufMutex);
-                _writeBuf.push_back(std::move(newBuf));
-            }
-            
-            _eventType |= EventType::Write;
-            _thread->modifyEvent(_sock, _eventType);
+            return;
+        } 
+#endif
+        DLNetwork::Buffer newBuf;
+        newBuf.append(buf, size);
+
+        {
+            std::lock_guard<std::mutex> lock(_writeBufMutex);
+            _writeBuf.push_back(std::move(newBuf));
         }
+
+        _eventType |= EventType::Write;
+        _thread->modifyEvent(_sock, _eventType);
     }
 }
 
@@ -339,6 +341,7 @@ bool Connection::handleReceivedData(const char* buf, size_t size) {
 }
 
 bool Connection::readInner() {
+#ifdef ENABLE_OPENSSL
     if (_ssl) {
         int ret = _ssl->onRecvEncrypted(_readBuf.peek(), _readBuf.readableBytes());
         if (ret > 0) {
@@ -350,14 +353,14 @@ bool Connection::readInner() {
             close();
             return false;
         }
-    } else {
-        if (_messageCb) {
-            return _messageCb(shared_from_this(), &_readBuf);
-        }
-        else {
-            close();
-            return false;
-        }
+    }
+#endif
+    if (_messageCb) {
+        return _messageCb(shared_from_this(), &_readBuf);
+    }
+    else {
+        close();
+        return false;
     }
 }
 bool Connection::handleRead(SOCKET sock)

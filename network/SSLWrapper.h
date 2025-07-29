@@ -8,7 +8,6 @@
 #ifdef ENABLE_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#endif
 
 namespace DLNetwork {
 
@@ -69,12 +68,10 @@ private:
     void handleOut();
 
     Mode _mode = Mode::Server;
-#ifdef ENABLE_OPENSSL
     SSL_CTX* _ctx = nullptr;
     SSL* _ssl = nullptr;
     BIO* _rbio = nullptr;
     BIO* _wbio = nullptr;
-#endif
 
     bool _handshakeFinished = false;
     std::function<void(const char* data, size_t len)> _onEncryptedData;
@@ -83,3 +80,5 @@ private:
 };
 
 } // namespace DLNetwork 
+
+#endif

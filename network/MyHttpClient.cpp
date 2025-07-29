@@ -139,9 +139,11 @@ void DLNetwork::MyHttpClient::close()
 void DLNetwork::MyHttpClient::onConnectionChange(TcpConnection::Ptr conn, ConnectEvent e)
 {
     if (e == ConnectEvent::Established) {
+#ifdef ENABLE_OPENSSL
         if (_tls) {
             _connection->enableTlsClient(_host, _certFile);
         }
+#endif
         if (_onConnected) {
             _onConnected(*this);
         }

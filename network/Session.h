@@ -117,9 +117,11 @@ protected:
         _conn->setOnMessage(std::bind(&Session::onConnMessage, this, std::placeholders::_1, std::placeholders::_2));
         _conn->setOnWriteDone(std::bind(&Session::onConnWriteDone, this, std::placeholders::_1));
         _conn->attach();
+#ifdef ENABLE_OPENSSL
         if (_enableTls) {
             _conn->enableTls(_certFile, _keyFile, _supportH2);
         }
+#endif
     }
 
     Connection::Ptr _conn;

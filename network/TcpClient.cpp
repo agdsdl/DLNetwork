@@ -46,8 +46,8 @@ std::string TcpClient::description() {
     o << " "<< name();
     return o.str();;
 }
-TcpClient::TcpClient(EventThread* loop, const INetAddress& serverAddr, const std::string& name, bool enableTls):
-	_serverAddr(serverAddr), _thread(loop), _name(name), _enableTls(enableTls)
+TcpClient::TcpClient(EventThread* loop, const INetAddress& serverAddr, const INetAddress& localAddr, const std::string& name, bool enableTls):
+	_serverAddr(serverAddr), _localAddr(localAddr), _thread(loop), _name(name), _enableTls(enableTls)
 {
 }
 
@@ -68,6 +68,22 @@ bool TcpClient::startConnect() {
     }
     _sock = fsock;
     SockUtil::setNoBlocked(fsock, true);
+    if(_localAddr.isValid()) {
+        int nret = 0;
+        SockUtil::setReuseable(fsock, true);
+        if(_localAddr.isIP4()) {
+            nret = ::bind(fsock, (sockaddr*)&_localAddr.addr4(), sizeof(_localAddr.addr4()));
+        }
+        else if(_localAddr.isIP6()) {
+            nret = ::bind(fsock, (sockaddr*)&_localAddr.addr6(), sizeof(_localAddr.addr6()));
+        }
+        if (nret < 0) {
+            mCritical() << "TcpClient::startConnect bind local port error" << get_uv_errmsg();
+            myclose(fsock);
+            return false;
+        }
+    }
+
     int ecode = connect(fsock, (sockaddr*)&_serverAddr.addr4(), _serverAddr.isIP4() ? sizeof(_serverAddr.addr4()) : sizeof(_serverAddr.addr6()));
     int uvErr = 0;
     if (ecode < 0) {
@@ -163,9 +179,11 @@ void TcpClient::handleWrite(SOCKET sock) {
     _conn->setOnMessage(std::bind(&TcpClient::messageCallback, this, std::placeholders::_1, std::placeholders::_2));
     _conn->setOnWriteDone(std::bind(&TcpClient::writedCallback, this, std::placeholders::_1));
     _conn->attach();
+#ifdef ENABLE_OPENSSL
     if (_enableTls) {
         _conn->enableTlsClient("", "");
     }
+#endif
     if (_conn->isSelfConnection()) {
         mCritical() << "TcpClient self connection:" << *_conn.get();
         _conn.reset();

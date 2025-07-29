@@ -43,7 +43,7 @@ public:
 	typedef std::function<void(TcpClient& cli)> WritedCallback;
 
 
-	TcpClient(EventThread* loop, const INetAddress& serverAddr, const std::string& name, bool enableTls = false);
+	TcpClient(EventThread* loop, const INetAddress& serverAddr, const INetAddress& localAddr, const std::string& name, bool enableTls = false);
 	~TcpClient();
 	bool startConnect();
 	void write(const char* buf, size_t size);
@@ -97,6 +97,7 @@ private:
 	ErrorCallback _errorCb;
 	EventThread* _thread;
 	INetAddress _serverAddr;
+	INetAddress _localAddr;
 	std::string _name;
 	State _state = State::disconnected;
 	bool _enableTls = false;

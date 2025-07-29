@@ -1,9 +1,10 @@
 #include "SSLWrapper.h"
 #include "MyLog.h"
 
+#ifdef ENABLE_OPENSSL
+
 namespace DLNetwork {
 
-#ifdef ENABLE_OPENSSL
 using AlpnProtos = std::vector<uint8_t>;
 
 const AlpnProtos alpnProtos{
@@ -20,21 +21,16 @@ static int alpnCallback(SSL* ssl, const unsigned char** out, unsigned char* outl
     }
     return SSL_TLSEXT_ERR_OK;
 }
-#endif
 
 void SSLWrapper::globalInit() {
-#ifdef ENABLE_OPENSSL
     SSL_library_init();
     OpenSSL_add_all_algorithms();
     SSL_load_error_strings();
-#endif
 }
 
 void SSLWrapper::globalFini() {
-#ifdef ENABLE_OPENSSL
     ERR_free_strings();
     EVP_cleanup();
-#endif
 }
 
 SSLWrapper::SSLWrapper() {
@@ -45,7 +41,6 @@ SSLWrapper::~SSLWrapper() {
 }
 
 bool SSLWrapper::init(const std::string& certFile, const std::string& keyFile, bool supportH2) {
-#ifdef ENABLE_OPENSSL
     _mode = Mode::Server;
     _ctx = SSL_CTX_new(TLS_server_method());
     if (!_ctx) {
@@ -83,13 +78,9 @@ bool SSLWrapper::init(const std::string& certFile, const std::string& keyFile, b
     SSL_set_accept_state(_ssl);
     
     return true;
-#else
-    return false;
-#endif
 }
 
 bool SSLWrapper::initAsClient(const std::string& hostName, const std::string& certFile) {
-#ifdef ENABLE_OPENSSL
     _mode = Mode::Client;
     _ctx = SSL_CTX_new(TLS_client_method());
     if (!_ctx) {
@@ -138,13 +129,9 @@ bool SSLWrapper::initAsClient(const std::string& hostName, const std::string& ce
     // handleOut();  // 确保发送第一个Client Hello
     
     return true;
-#else
-    return false;
-#endif
 }
 
 int SSLWrapper::onRecvEncrypted(const char* data, size_t len) {
-#ifdef ENABLE_OPENSSL
     int needRead = len;
     do
     {
@@ -183,11 +170,9 @@ int SSLWrapper::onRecvEncrypted(const char* data, size_t len) {
     
     handleOut();
     return len - needRead;
-#endif
 }
 
 int SSLWrapper::sendUnencrypted(const char* data, size_t len) {
-#ifdef ENABLE_OPENSSL
     if (!_handshakeFinished) {
         // 握手未完成，将数据存入缓存
         _sendBuffer.push(std::string(data, len));
@@ -211,11 +196,9 @@ int SSLWrapper::sendUnencrypted(const char* data, size_t len) {
     
     handleOut();
     return len - needWrite;
-#endif
 }
 
 bool SSLWrapper::doHandshake() {
-#ifdef ENABLE_OPENSSL
     if (_handshakeFinished) {
         return true;
     }
@@ -251,9 +234,6 @@ bool SSLWrapper::doHandshake() {
         }
         return true;
     }
-#else
-    return false;
-#endif
 }
 
 bool SSLWrapper::isHandshakeFinished() const {
@@ -261,7 +241,6 @@ bool SSLWrapper::isHandshakeFinished() const {
 }
 
 bool SSLWrapper::handleSSLError(int ret) {
-#ifdef ENABLE_OPENSSL
     int err = SSL_get_error(_ssl, ret);
     switch (err) {
         case SSL_ERROR_WANT_READ:
@@ -278,13 +257,9 @@ bool SSLWrapper::handleSSLError(int ret) {
             ERR_print_errors_fp(stderr);
             return false;
     }
-#else
-    return false;
-#endif
 }
 
 void SSLWrapper::handleOut() {
-#ifdef ENABLE_OPENSSL
     char buf[4096];
     int read;
     while ((read = BIO_read(_wbio, buf, sizeof(buf))) > 0) {
@@ -292,11 +267,9 @@ void SSLWrapper::handleOut() {
             _onEncryptedData(buf, read);
         }
     }
-#endif
 }
 
 void SSLWrapper::shutdown() {
-#ifdef ENABLE_OPENSSL
     if (_ssl) {
         SSL_shutdown(_ssl);
         SSL_free(_ssl);
@@ -306,7 +279,6 @@ void SSLWrapper::shutdown() {
         SSL_CTX_free(_ctx);
         _ctx = nullptr;
     }
-#endif
 }
 
 bool SSLWrapper::startHandshake() {
@@ -317,3 +289,5 @@ bool SSLWrapper::startHandshake() {
 }
 
 } // namespace DLNetwork 
+
+#endif // ENABLE_OPENSSL

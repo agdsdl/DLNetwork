@@ -84,7 +84,7 @@ public:
                 nret = ::bind(sock, (sockaddr*)&localAddr.addr6(), sizeof(localAddr.addr6()));
             }
             if (nret < 0) {
-                mCritical() << "Connection::connectTo bind local port error" << get_uv_errmsg();
+                mCritical() << "Connection::connectTo bind local port error" << localAddr << get_uv_errmsg();
                 myclose(sock);
                 return nullptr;
             }
@@ -181,7 +181,9 @@ protected:
     WritedCallback _writedcb;
     bool _closing;
     std::mutex _writeBufMutex;
+#ifdef ENABLE_OPENSSL
     std::unique_ptr<SSLWrapper> _ssl;
+#endif
     int _eventType;
     INetAddress _peerAddr;
     INetAddress _selfAddr;
